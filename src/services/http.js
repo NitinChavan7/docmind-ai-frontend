@@ -1,13 +1,17 @@
 ﻿// const configured = (import.meta.env?.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 // export const API_BASE = configured.endsWith('/api') ? configured : configured + '/api';
+
 const configured =
   import.meta.env.VITE_API_URL ??
   (import.meta.env.DEV ? "http://localhost:5000" : "");
 
-const API_BASE = configured.endsWith("/api") ? configured : `${configured}/api`;
+export const API_BASE = configured.replace(/\/+$/, "").endsWith("/api")
+  ? configured.replace(/\/+$/, "")
+  : `${configured.replace(/\/+$/, "")}/api`;
 let refreshPromise = null;
 let csrfPromise = null;
 let identityVersion = 0;
+
 const publicPaths = new Set([
   "/auth/login",
   "/auth/register",
