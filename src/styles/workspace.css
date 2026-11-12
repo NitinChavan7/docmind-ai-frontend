@@ -489,3 +489,61 @@ body{min-width:320px;overflow:hidden}
 @media(max-width:900px){.guest-welcome-layout{grid-template-columns:1fr;min-height:0;gap:0}.guest-welcome-visual{display:none}.guest-welcome-copy{text-align:center;max-width:560px;margin:0 auto}.guest-welcome-kicker{justify-content:center;margin-bottom:19px}.guest-welcome-actions{align-items:center}.guest-welcome-copy>p{margin-left:auto;margin-right:auto}.guest-welcome h1{font-size:46px}.guest-welcome{padding:45px 30px 25px}.guest-welcome-steps{max-width:690px;margin:35px auto 0;gap:20px}.guest-welcome-step{gap:8px}.guest-step-icon{width:31px;height:33px}.guest-start .workspace-header{padding:0 24px;height:64px;min-height:64px}}
 @media(max-width:560px){.guest-start .workspace-header{padding:env(safe-area-inset-top) 19px 0;height:calc(60px + env(safe-area-inset-top));min-height:calc(60px + env(safe-area-inset-top))}.guest-header-brand>span{font-size:24px}.guest-header-brand>svg{width:21px}.guest-start .guest-sign-in{font-size:12px;min-height:38px;padding:9px 12px}.guest-welcome{padding:31px 23px max(22px,env(safe-area-inset-bottom))}.guest-welcome h1{font-size:clamp(33px,9vw,42px);letter-spacing:-1px;margin-bottom:17px}.guest-welcome-kicker{font-size:8px;letter-spacing:1.25px;margin-bottom:18px}.guest-welcome-copy>p{font-size:13px;line-height:1.85;margin-bottom:22px}.guest-welcome-actions{gap:11px}.guest-welcome-actions>.primary-button{width:100%;max-width:330px;justify-content:center;font-size:14px;min-height:48px}.guest-welcome-actions>span{font-size:10px}.guest-welcome-steps{grid-template-columns:1fr;gap:13px;padding:21px 0 13px;margin-top:25px}.guest-welcome-step{align-items:center;gap:11px}.guest-step-icon{width:34px;height:35px}.guest-welcome-step strong{font-size:12px}.guest-welcome-step p{font-size:11px;margin-top:0}.guest-welcome-privacy{font-size:9px;margin-top:13px;text-align:left;align-items:flex-start}.guest-welcome-privacy>svg{flex-shrink:0;margin-top:1px}}
 @media(max-height:600px){.guest-welcome{padding-top:22px;padding-bottom:18px}.guest-welcome-layout{min-height:0}.guest-welcome-visual{padding-top:0;padding-bottom:20px}.guest-preview-paper{width:220px;padding:22px}.guest-preview-title{font-size:24px}.guest-preview-caption{display:none}.guest-welcome h1{font-size:clamp(32px,4vw,44px)}.guest-welcome-kicker{margin-bottom:14px}.guest-welcome-copy>p{margin-bottom:20px}.guest-welcome-steps{margin-top:24px;padding-top:20px}.guest-welcome-privacy{margin-top:4px}}
+
+/* Keep the document illustration consistent across desktop, tablet and phone. */
+@media(max-width:900px){
+  .guest-welcome{padding:36px 28px 26px}
+  .guest-welcome-inner{max-width:600px}
+  .guest-welcome-layout{gap:30px}
+  .guest-welcome-visual{display:flex;width:100%;max-width:420px;justify-self:center;padding:20px 40px 42px}
+  .guest-welcome-visual::before{inset:8px 0 12px;border-radius:44% 46% 40% 44%}
+  .guest-preview-paper{width:270px;transform:rotate(-3deg);padding:25px 24px 20px}
+  .guest-preview-caption{display:flex;right:8px;bottom:0;font-size:11px;padding:12px 15px;color:#587348}
+  .guest-preview-eyebrow{color:#788a66;margin-bottom:18px}
+  .guest-preview-highlight{color:#667d50;margin:17px 0}
+  .guest-preview-page{color:#7e8d6f;margin-top:18px}
+
+  .guest-welcome-copy{max-width:520px;text-align:left;width:100%}
+  .guest-welcome-kicker{justify-content:flex-start;color:#647b50;font-size:10px;letter-spacing:1.4px;margin-bottom:18px}
+  .guest-welcome h1{font-size:52px;line-height:1.08;letter-spacing:-1.8px;margin-bottom:20px}
+  .guest-welcome-copy>p{color:#61705c;font-size:15px;line-height:1.75;margin:0 0 24px;max-width:460px}
+  .guest-welcome-actions{align-items:stretch;gap:10px}
+  .guest-welcome-actions>.primary-button{max-width:none;width:100%;min-height:52px;font-size:15px;justify-content:center;border-radius:12px}
+  .guest-welcome-actions>.primary-button>svg:last-child{margin-left:auto}
+  .guest-welcome-actions>.primary-button>svg:first-child{margin-right:auto}
+  .guest-welcome-actions>span{text-align:center;color:#6c7b61;font-size:11px}
+  .guest-welcome-steps{gap:12px;margin-top:25px;padding:20px 0 17px}
+  .guest-welcome-step{flex-direction:column;gap:8px}
+  .guest-welcome-step strong{font-size:12px;color:#4e6543}
+  .guest-welcome-step p{color:#738268;line-height:1.6;font-size:11px}
+  .guest-welcome-privacy{color:#708164;font-size:11px;margin:6px 0 0}
+}
+@media(max-width:560px){
+  .guest-start .workspace-header{padding-left:22px;padding-right:22px;height:calc(68px + env(safe-area-inset-top));min-height:calc(68px + env(safe-area-inset-top))}
+  .guest-start .guest-sign-in{min-height:44px;padding:10px 15px;border-radius:9px}
+  .guest-welcome{padding:30px 22px max(24px,env(safe-area-inset-bottom))}
+  .guest-welcome-layout{gap:25px}
+  .guest-welcome-visual{max-width:350px;padding:13px 32px 36px;margin-top:2px}
+  .guest-preview-paper{width:245px;padding:22px 21px 18px}
+  .guest-preview-title{font-size:27px;margin-bottom:14px}
+  .guest-preview-lines{gap:6px}
+  .guest-preview-highlight{font-size:11px;padding:9px;margin:12px 0}
+  .guest-preview-caption{right:0;bottom:0;padding:11px 13px;border-radius:10px;font-size:10px;gap:7px}
+  .guest-preview-caption>svg{width:15px;height:15px}
+  .guest-preview-eyebrow{font-size:7px;letter-spacing:1.2px;margin-bottom:14px}
+  .guest-preview-page{font-size:7px;margin-top:12px;padding-top:10px}
+
+  .guest-welcome h1{font-size:clamp(38px,11.2vw,49px)}
+  .guest-welcome-copy>p{font-size:14px;line-height:1.7;margin-bottom:22px}
+  .guest-welcome-steps{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .guest-welcome-step{align-items:flex-start;gap:8px}
+  .guest-welcome-step strong{display:block;font-size:11px;line-height:1.55;font-weight:600}
+  .guest-welcome-step strong>span{display:none}
+  .guest-welcome-step p{display:none}
+  .guest-step-icon{height:32px;width:32px;border-radius:8px}
+  .guest-welcome-privacy{text-align:left;justify-content:flex-start;align-items:flex-start;font-size:10px;gap:7px;line-height:1.7}
+}
+@media(max-width:360px){
+  .guest-welcome{padding-left:18px;padding-right:18px}
+  .guest-start .workspace-header{padding-left:18px;padding-right:18px}
+}
