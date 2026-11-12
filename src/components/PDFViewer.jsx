@@ -14,16 +14,18 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
   const [page, setPage] = useState(1), [scale, setScale] = useState(1), [width, setWidth] = useState(680);
   const [resource, setResource] = useState({ id: null, url: null, error: '' });
   const [retry, setRetry] = useState(0);
-  const [renderedPage, setRenderedPage] = useState('');
+  const [renderedPage, setRenderedPage] = useState({ source: null, page: 0 });
   const scroll = useRef(null), tools = useRef(null);
   useEffect(() => {
     const close = event => { if (tools.current && !tools.current.contains(event.target)) tools.current.open = false; };
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, []);
-  const pages = loaded.id === doc?.id ? loaded.pages : 0;
-  const pdfUrl = resource.id === doc?.id ? resource.url : null;
-  const fileError = resource.id === doc?.id ? resource.error : '';
+  const source = doc?.file || doc?.id;
+  const remoteUrl = doc?.file ? null : doc?.fileUrl;
+  const pages = loaded.id === source ? loaded.pages : 0;
+  const pdfUrl = resource.id === source ? resource.url : null;
+  const fileError = resource.id === source ? resource.error : '';
   const renderWidth = Math.floor(Math.min(width, 780) * scale);
   const loadingPreview = <PDFSkeleton name={doc?.name} width={renderWidth}/>;
 
@@ -31,21 +33,21 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
     if (!doc || expired) return;
     const controller = new AbortController();
     let objectUrl;
-    setResource({ id: doc.id, url: null, error: '' });
+    setResource({ id: source, url: null, error: '' });
     (async () => {
       try {
         const blob = doc.file || await fetchPrivatePdf(doc.fileUrl, controller.signal);
         if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
-        setResource({ id: doc.id, url: objectUrl, error: '' });
+        setResource({ id: source, url: objectUrl, error: '' });
       } catch (error) {
-        if (!controller.signal.aborted) { setResource({ id: doc.id, url: null, error: friendlyError(error, 'pdf') }); onError?.(error); }
+        if (!controller.signal.aborted) { setResource({ id: source, url: null, error: friendlyError(error, 'pdf') }); onError?.(error); }
       }
     })();
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [doc?.id, doc?.fileUrl, doc?.file, retry, expired]);
+  }, [source, remoteUrl, retry, expired]);
 
-  useEffect(() => { setPage(1); setScale(1); scroll.current?.scrollTo(0, 0); }, [doc?.id]);
+  useEffect(() => { setPage(1); setScale(1); scroll.current?.scrollTo(0, 0); }, [source]);
   useEffect(() => {
     if (Number.isInteger(goToPage?.page) && goToPage.page > 0 && pages > 0) {
       setPage(Math.min(goToPage.page, pages)); scroll.current?.scrollTo(0, 0);
@@ -62,7 +64,7 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
     });
     observer.observe(node);
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
-  }, [doc?.id]);
+  }, [source]);
 
   const changePage = delta => { setPage(previous => previous + delta); scroll.current?.scrollTo(0, 0); };
   const retryFile = () => { setLoaded({ id: null, pages: 0 }); setRetry(previous => previous + 1); };
@@ -94,8 +96,8 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
     </div>
     <div className="pdf-scroll" ref={scroll}>
       {fileError ? errorView : !pdfUrl ? loadingPreview :
-        <Document file={pdfUrl} onLoadSuccess={({ numPages }) => setLoaded({ id: doc.id, pages: numPages })} loading={loadingPreview} error={errorView}>
-          <div className={`page-paper ${renderedPage === doc.id + ':' + page ? 'is-rendered' : ''}`}><Page onRenderSuccess={() => setRenderedPage(doc.id + ':' + page)} pageNumber={page} width={renderWidth} devicePixelRatio={Math.min(window.devicePixelRatio || 1, 2)} renderTextLayer renderAnnotationLayer loading={loadingPreview} error={errorView}/></div>
+        <Document file={pdfUrl} onLoadSuccess={({ numPages }) => setLoaded({ id: source, pages: numPages })} loading={loadingPreview} error={errorView}>
+          <div className={`page-paper ${renderedPage.source === source && renderedPage.page === page ? 'is-rendered' : ''}`}><Page onRenderSuccess={() => setRenderedPage({ source, page })} pageNumber={page} width={renderWidth} devicePixelRatio={Math.min(window.devicePixelRatio || 1, 2)} renderTextLayer renderAnnotationLayer loading={loadingPreview} error={errorView}/></div>
         </Document>}
     </div>
     <div className="viewer-status"><span>{doc.pendingUpload ? 'Preview available · Uploading to your account…' : doc.sample ? 'Sample document' : doc.guest ? 'Local preview - Sign in when you ask a question' : doc.remote ? 'Saved to your account' : 'Saved in your browser'}</span><span>Page {page} of {pages || '...'}</span></div>

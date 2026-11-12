@@ -556,3 +556,25 @@ body{min-width:320px;overflow:hidden}
   .guest-welcome{padding-left:18px;padding-right:18px}
   .guest-start .workspace-header{padding-left:18px;padding-right:18px}
 }
+
+/* Document removal uses the same accessible dialog shell as account actions. */
+.delete-document-dialog{width:min(460px,calc(100vw - 32px));padding:0;border:1px solid #dde4d6;border-radius:18px;background:#fdfef9;color:#304a35}
+.delete-document-card{padding:23px 26px 26px}
+.delete-document-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.delete-document-top>span{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:600;letter-spacing:-.6px}
+.delete-document-top .tool-button{width:36px;height:36px;min-height:36px}
+.delete-document-symbol{display:grid;place-items:center;width:54px;height:54px;border-radius:14px;background:#faf0ea;color:#a65e45;border:1px solid #f0ddd1;margin-bottom:20px}
+.delete-document-card h2{font-size:23px;letter-spacing:-.6px;font-weight:600;margin:0 0 12px;line-height:1.3}
+.delete-document-card>p{font-size:13px;line-height:1.8;color:#71806a;margin:0 0 20px}
+.delete-document-file{display:flex;align-items:center;gap:12px;padding:15px;border:1px solid #e3e8db;border-radius:11px;background:#f5f7ef;min-width:0}
+.delete-document-file>svg{flex-shrink:0;color:#81936e}
+.delete-document-file>span{display:flex;flex-direction:column;gap:5px;min-width:0}
+.delete-document-file strong{font-size:13px;font-weight:500;line-height:1.6;overflow-wrap:anywhere}
+.delete-document-file small{font-size:11px;color:#849279}
+.delete-document-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:25px}
+.delete-document-actions>button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:11px 17px;border-radius:9px;border:1px solid #dce4d3;background:#fffefa;color:#586e4d;font-size:12px;font-weight:500}
+.delete-document-actions>.delete-document-confirm{color:#fff;background:#a14f38;border-color:#a14f38}
+.delete-document-actions>.delete-document-confirm:hover{background:#89402d;border-color:#89402d}
+.delete-document-actions>button:first-child:hover{background:#edf2e5}
+.delete-document-actions>button:focus-visible{outline:2px solid #72935a;outline-offset:3px}
+@media(max-width:560px){.delete-document-card{padding:18px 20px 21px}.delete-document-card h2{font-size:22px}.delete-document-top{margin-bottom:18px}.delete-document-actions>button{flex:1;padding:11px 10px}.delete-document-file{padding:12px}.delete-document-actions{gap:8px}}
