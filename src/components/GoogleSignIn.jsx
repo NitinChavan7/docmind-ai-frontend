@@ -26,10 +26,10 @@ function GoogleAttempt({ clientId, onCredential, onError, busy, onRetry }) {
         }} onError={onError}/>
       </div> : <div className="google-sign-in-unavailable">
         <button className="google-placeholder" type="button" disabled aria-describedby="google-sdk-status"><GoogleMark/>Continue with Google{status === 'loading' && <LoaderCircle className="spinner" size={14}/>}</button>
-        {status === 'loading' ? <p id="google-sdk-status" role="status">Loading secure Google sign-in...</p> : <div id="google-sdk-status" className="google-sdk-error" role="alert"><p>Google sign-in could not load. Check your connection and try again.</p><button type="button" onClick={onRetry} disabled={busy}><RotateCcw size={12}/>Retry Google sign-in</button></div>}
+        {status === 'loading' ? <p id="google-sdk-status" role="status">Loading Google sign-in...</p> : <div id="google-sdk-status" className="google-sdk-error" role="alert"><p>Google sign-in could not load. Check your connection and try again.</p><button type="button" onClick={onRetry} disabled={busy}><RotateCcw size={12}/>Retry Google sign-in</button></div>}
       </div>}
     </GoogleOAuthProvider>
-    {status === 'ready' && busy && <p className="google-auth-progress" role="status"><LoaderCircle size={12} className="spinner"/>Signing you in securely...</p>}
+    {status === 'ready' && busy && <p className="google-auth-progress" role="status"><LoaderCircle size={12} className="spinner"/>Signing in...</p>}
   </div>;
 }
 

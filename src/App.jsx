@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Menu, ArrowUpRight, ArrowRight, Info, X, FolderOpen, LogIn, BookOpen, MessageSquare, FileText } from 'lucide-react';
 import Sidebar from './components/Sidebar.jsx';
+import GuestWelcome from './components/GuestWelcome.jsx';
 import AccountControls from './components/AccountControls.jsx';
 import ChatPanel from './components/ChatPanel.jsx';
 import ChatErrorBoundary from './components/ChatErrorBoundary.jsx';
@@ -8,6 +9,10 @@ import WorkspaceDivider from './components/WorkspaceDivider.jsx';
 import { listStoredDocuments, saveDocument, deleteStoredDocument, readChats, writeChats } from './lib/storage.js';
 import { getDocuments, uploadDocument, processDocument, deleteDocument } from './services/documentApi.js';
 import useDocumentChat from './hooks/useDocumentChat.js';
+import useUsage from './hooks/useUsage.js';
+import UsageDashboard from './components/UsageDashboard.jsx';
+import UsagePolicyDialog from './components/UsagePolicyDialog.jsx';
+import { uploadIssue, questionIssue, quotaMessage, QUOTA_CODES, isExpired, chatQuestionQuota } from './lib/usage.js';
 import { isAnswerPending } from './lib/chat.js';
 import { friendlyError } from './lib/errors.js';
 
@@ -19,9 +24,17 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
   const authenticated = USE_REAL_API && Boolean(user);
   const guestMode = USE_REAL_API && !user;
   const userId = user?.id || null;
+  const usageState = useUsage(authenticated ? userId : null);
+  const usageData = usageState.available ? usageState.data : null;
+  const usageReturnFocus = useRef(null), policyReturnFocus = useRef(null);
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false), [quotaFailure, setQuotaFailure] = useState(null);
+  const expiredSeen = useRef(new Set());
+  useEffect(() => { setUsageOpen(false); setPolicyOpen(false); setQuotaFailure(null); expiredSeen.current.clear(); }, [userId]);
+  useEffect(() => { setQuotaFailure(previous => ['CHAT_QUESTION_LIMIT_REACHED', 'CHAT_EXPIRED', 'DOCUMENT_EXPIRED'].includes(previous?.code) ? previous : null); }, [usageState.updatedAt]);
   const [docs, setDocs] = useState([]), [activeId, setActiveId] = useState(null);
   const [chats, setChats] = useState(() => USE_REAL_API ? {} : readChats());
-  const [collapsed, setCollapsed] = useState(false), [chatOpen, setChatOpen] = useState(() => !window.matchMedia('(max-width: 1101px)').matches), [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false), [chatOpen, setChatOpen] = useState(() => !window.matchMedia('(max-width: 1279px)').matches), [mobileOpen, setMobileOpen] = useState(false);
   const [chatWidth, setChatWidth] = useState(() => Math.min(680, Math.max(520, Math.round(window.innerWidth * .32))));
   const [chatFocus, setChatFocus] = useState(false);
   const [sidebarProfileOpen, setSidebarProfileOpen] = useState(false);
@@ -36,8 +49,18 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
   docsRef.current = docs;
   const visibleDocs = useMemo(() => docs.filter(doc => !USE_REAL_API || doc.guest || (authenticated && doc.ownerId === userId)), [docs, authenticated, userId]);
   const activeDoc = useMemo(() => visibleDocs.find(doc => doc.id === activeId) || null, [visibleDocs, activeId]);
+  const guestStart = guestMode && !activeDoc;
   const serverDocId = authenticated && activeDoc && !activeDoc.guest ? activeDoc.id : null;
-  const serverChat = useDocumentChat(serverDocId, Boolean(serverDocId), userId);
+  const reportQuota = error => {
+    if (!QUOTA_CODES.has(error?.code)) return;
+    setQuotaFailure({ code: error.code, details: error.details, documentId: activeId, chatId: serverChat.activeChatId }); usageState.refresh();
+    if (error.code === 'DOCUMENT_EXPIRED') setDocs(previous => previous.map(doc => doc.id === activeId ? { ...doc, expiresAt: new Date().toISOString() } : doc));
+  };
+  const newChatIssue = () => !usageData ? { code: 'USAGE_UNAVAILABLE' } : isExpired(activeDoc) ? { code: 'DOCUMENT_EXPIRED' } : usageData.remaining.chats === 0 ? { code: 'CHAT_LIMIT_REACHED', details: { maxChats: usageData.limits.chats } } : null;
+  const serverChat = useDocumentChat(serverDocId, Boolean(serverDocId), userId, {
+    usage: usageData, usageUpdatedAt: usageState.updatedAt, onUsageChange: usageState.refresh, onError: reportQuota,
+    beforeSend: chat => questionIssue(usageData, chat, activeDoc), beforeNewChat: newChatIssue,
+  });
   const { pendingDocId, busyRef } = serverChat;
   const taskBusy = pendingDocId !== null || Boolean(transferDocId);
 
@@ -105,6 +128,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
 
   const indexDocument = async doc => {
     if (processing.current.has(doc.id) || deleting.current.has(doc.id)) return;
+    if (isExpired(doc)) { reportQuota({ code: 'DOCUMENT_EXPIRED' }); return; }
     processing.current.add(doc.id);
     const update = fields => setDocs(previous => previous.map(item => item.id === doc.id ? { ...item, ...fields } : item));
     update({ status: 'processing', processingError: '' });
@@ -113,7 +137,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
       update({ status: result?.status || 'ready', pageCount: result?.pageCount ?? doc.pageCount });
       setToast(doc.name + ' is ready for questions');
     } catch (error) {
-      const message = friendlyError(error, 'index');
+      const message = friendlyError(error, 'index', usageData); reportQuota(error);
       update({ status: 'failed', processingError: message }); setToast(message);
     } finally { processing.current.delete(doc.id); }
   };
@@ -124,20 +148,27 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
     try {
       for (const file of files) {
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) { setToast('Please choose a PDF. Other file types are not supported yet.'); continue; }
-        if (file.size > (USE_REAL_API ? 10 : 20) * 1024 * 1024) { setToast('That PDF is a little too large. Please choose one under ' + (USE_REAL_API ? 10 : 20) + ' MB.'); continue; }
+        if (!authenticated && file.size > (USE_REAL_API ? 10 : 20) * 1024 * 1024) { setToast('This PDF exceeds the size limit. Choose a file under ' + (USE_REAL_API ? 10 : 20) + ' MB.'); continue; }
         try {
           if (await file.slice(0, 5).text() !== '%PDF-') { setToast('That file does not look like a PDF. Please choose another PDF.'); continue; }
           let doc;
-          if (authenticated) doc = { ...await uploadDocument(file), ownerId: userId };
+          if (authenticated) {
+            const latest = await usageState.refresh();
+            const issue = uploadIssue(file, latest);
+            if (issue) { setToast(friendlyError(issue, 'upload', latest)); continue; }
+            doc = { ...await uploadDocument(file), ownerId: userId };
+            await usageState.refresh();
+          }
           else {
             doc = { id: (guestMode ? 'guest:' : '') + uid(), name: file.name, size: file.size, createdAt: Date.now(), file, guest: guestMode, status: 'local' };
             if (!USE_REAL_API) await saveDocument(doc);
           }
           setDocs(previous => [doc, ...previous.filter(item => item.id !== doc.id)]);
           setActiveId(doc.id); setJumpPage({ page: 0 }); setMobileOpen(false); setTransferError('');
-          setToast(guestMode ? 'Your PDF is ready to preview. Ask a question whenever you are ready.' : 'Added ' + file.name + ' to your library');
+          if (guestMode) { setChatOpen(!window.matchMedia('(max-width: 1279px)').matches); setChatFocus(false); }
+          setToast(guestMode ? 'PDF opened. Sign in to ask questions.' : 'Added ' + file.name + ' to your library');
           if (authenticated) await indexDocument(doc);
-        } catch (error) { setToast(friendlyError(error, 'upload')); }
+        } catch (error) { reportQuota(error); setToast(friendlyError(error, 'upload', usageData)); if (authenticated) usageState.refresh(); }
       }
     } finally { uploadLock.current = false; setUploading(false); }
   };
@@ -147,7 +178,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
     if (!doc.guest && !window.confirm('Remove "' + doc.name + '" and its saved conversations?')) return;
     deleting.current.add(doc.id); setDeletingId(doc.id);
     try {
-      if (doc.remote) await deleteDocument(doc.id);
+      if (doc.remote) { await deleteDocument(doc.id); await usageState.refresh(); }
       else if (!doc.guest) await deleteStoredDocument(doc.id);
       removedIds.current.add(doc.id);
       setDocs(previous => previous.filter(item => item.id !== doc.id));
@@ -171,7 +202,11 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
       });
       return;
     }
-    if (authenticated) return serverChat.sendQuestion(question);
+    if (authenticated) {
+      const issue = questionIssue(usageData, serverChat.activeConversation, activeDoc) || activeDenial;
+      if (issue) { reportQuota(issue); return; }
+      return serverChat.sendQuestion(question);
+    }
     setChats(previous => ({ ...previous, [activeDoc.id]: [...(previous[activeDoc.id] || []),
       { id: uid(), timestamp: Date.now(), role: 'user', content: question },
       { id: uid(), timestamp: Date.now(), role: 'assistant', demo: true, content: 'This is an offline preview. Sign in to your connected workspace for answers from your documents.' },
@@ -190,8 +225,12 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
           const key = userId + ':' + doc.id;
           let remote = transfers.current.get(key);
           if (!remote) {
+            const latest = await usageState.refresh();
+            const issue = uploadIssue(doc.file, latest);
+            if (issue) throw issue;
             remote = { ...await uploadDocument(doc.file, { signal: controller.signal }), ownerId: userId };
             transfers.current.set(key, remote);
+            await usageState.refresh();
           }
           const result = await processDocument(remote.id, { signal: controller.signal });
           if (controller.signal.aborted) return;
@@ -201,7 +240,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
           setQueuedQuestion(previous => previous?.id === request.id ? { ...previous, docId: ready.id, phase: 'ready' } : previous);
         } catch (error) {
           if (!controller.signal.aborted) {
-            setTransferError(friendlyError(error, 'index'));
+            reportQuota(error); setTransferError(friendlyError(error, 'index', usageData));
             setQueuedQuestion(previous => previous?.id === request.id ? { ...previous, resume: false } : previous);
           }
         } finally {
@@ -230,27 +269,54 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
     return () => { cancelAnimationFrame(frame); viewport.removeEventListener('resize', resize); document.documentElement.style.removeProperty('--workspace-height'); };
   }, []);
 
-  const openUpload = () => { if (!uploadLock.current && !busyRef.current && !transferDocId) inputRef.current?.click(); };
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1280px)');
+    const closeDrawer = event => { if (event.matches) setMobileOpen(false); };
+    desktop.addEventListener('change', closeDrawer);
+    return () => desktop.removeEventListener('change', closeDrawer);
+  }, []);
+
+  const uploadRestriction = authenticated ? uploadIssue(null, usageData) : null;
+  const uploadReason = uploadRestriction ? friendlyError(uploadRestriction, 'upload', usageData) : '';
+  const openUpload = () => { if (uploadRestriction) { setToast(uploadReason); return; } if (!uploadLock.current && !busyRef.current && !transferDocId) inputRef.current?.click(); };
   const reload = () => { if (authenticated && !uploadLock.current && !busyRef.current && !processing.current.size && !deleting.current.size) loadDocuments(); };
   const signIn = () => onRequestSignIn?.({ reason: 'account' });
   const activeApi = authenticated && Boolean(activeDoc && !activeDoc.guest);
   const transferWaiting = Boolean(transferDocId && transferDocId === activeId);
+  const activeExpired = activeApi && isExpired(activeDoc, usageState.now);
+  const activeDenial = quotaFailure?.documentId === activeId && quotaFailure?.chatId === serverChat.activeChatId && ['DAILY_AI_LIMIT_REACHED', 'CHAT_QUESTION_LIMIT_REACHED', 'DOCUMENT_EXPIRED', 'CHAT_EXPIRED'].includes(quotaFailure.code) ? quotaFailure : null;
+  const chatRestriction = activeApi ? questionIssue(usageData, serverChat.activeConversation, activeDoc, usageState.now) || activeDenial : null;
+  const newChatReason = activeApi ? quotaMessage(newChatIssue(), usageData) : '';
+  const currentQuota = chatQuestionQuota(serverChat.activeConversation);
+  const remainingInChat = usageData && (currentQuota.remainingQuestions ?? (currentQuota.questionCount !== null ? Math.max(0, usageData.limits.questionsPerChat - currentQuota.questionCount) : null));
 
-  return <div className={`app-shell ${activeDoc ? 'has-document' : ''} ${chatOpen ? 'is-asking' : 'is-reading'}`} onDragEnter={event => { event.preventDefault(); if (event.dataTransfer.types.includes('Files')) { dragDepth.current++; setDragging(true); } }} onDragOver={event => event.preventDefault()} onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }} onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDragging(false); upload([...event.dataTransfer.files]); }}>
+  useEffect(() => {
+    if (!authenticated) return;
+    let docsExpired = false, chatsExpired = false;
+    for (const doc of visibleDocs) if (isExpired(doc, usageState.now) && !expiredSeen.current.has('doc:' + doc.id)) { expiredSeen.current.add('doc:' + doc.id); docsExpired = true; }
+    for (const chat of serverChat.conversations) if (isExpired(chat, usageState.now) && !expiredSeen.current.has('chat:' + chat._id)) { expiredSeen.current.add('chat:' + chat._id); chatsExpired = true; }
+    if (docsExpired) { loadDocuments(); usageState.refresh(); }
+    if (chatsExpired) { serverChat.refreshConversations(); usageState.refresh(); }
+  }, [authenticated, visibleDocs, serverChat.conversations, usageState.now, loadDocuments, usageState.refresh]);
+
+  return <div className={`app-shell ${activeDoc ? 'has-document' : ''} ${guestStart ? 'guest-start' : ''} ${chatOpen ? 'is-asking' : 'is-reading'}`} onDragEnter={event => { event.preventDefault(); if (event.dataTransfer.types.includes('Files')) { dragDepth.current++; setDragging(true); } }} onDragOver={event => event.preventDefault()} onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }} onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDragging(false); upload([...event.dataTransfer.files]); }}>
     <input ref={inputRef} type="file" accept="application/pdf,.pdf" multiple hidden onChange={event => { upload([...event.target.files]); event.target.value = ''; }}/>
-    <Sidebar user={user} guestMode={guestMode} onRequestSignIn={signIn} profileOpen={sidebarProfileOpen} onOpenProfile={user ? event => accountControls.current?.openProfile(event.currentTarget) : undefined} docs={visibleDocs} activeId={activeId} selectionLocked={Boolean(transferDocId)} onSelect={id => { if (transferDocId) return; if (id !== activeId) serverChat.cancelGeneration(); setActiveId(id); setJumpPage({ page: 0 }); setTransferError(''); }} onUpload={openUpload} onDelete={deleteDoc} collapsed={collapsed} onToggle={() => setCollapsed(value => !value)} query={query} onQuery={setQuery} chatCount={activeApi ? serverChat.messages.length : Object.values(chats).reduce((n, items) => n + items.length, 0)} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} apiMode={authenticated} uploading={uploading} loading={loadingDocs} loadError={loadError} onReload={reload} onProcess={indexDocument} deletingId={deletingId} pendingDocId={pendingDocId || transferDocId}/>
+    {authenticated && policyOpen && <UsagePolicyDialog usageState={usageState} onClose={() => setPolicyOpen(false)} returnFocusRef={policyReturnFocus}/>}
+    {!guestStart && <Sidebar usage={usageData} uploadReason={uploadReason} now={usageState.now} onPolicy={authenticated ? event => { policyReturnFocus.current = mobileOpen ? document.querySelector('[aria-label="Open navigation"]') : event.currentTarget; setMobileOpen(false); setUsageOpen(false); setPolicyOpen(true); } : undefined} user={user} guestMode={guestMode} onRequestSignIn={signIn} profileOpen={sidebarProfileOpen} onOpenProfile={user ? event => accountControls.current?.openProfile(event.currentTarget) : undefined} docs={visibleDocs} activeId={activeId} selectionLocked={Boolean(transferDocId)} onSelect={id => { if (transferDocId) return; if (id !== activeId) serverChat.cancelGeneration(); setActiveId(id); setJumpPage({ page: 0 }); setTransferError(''); }} onUpload={openUpload} onDelete={deleteDoc} collapsed={collapsed} onToggle={() => setCollapsed(value => !value)} query={query} onQuery={setQuery} chatCount={activeApi ? serverChat.messages.length : Object.values(chats).reduce((n, items) => n + items.length, 0)} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} apiMode={authenticated} uploading={uploading} loading={loadingDocs} loadError={loadError} onReload={reload} onProcess={indexDocument} deletingId={deletingId} pendingDocId={pendingDocId || transferDocId}/>}
     <main className="main-workspace">
-      <header className="workspace-header"><div className="workspace-left"><button className="tool-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20}/></button><div className="breadcrumb"><FolderOpen size={16}/><span>Workspace</span><span className="crumb-sep">/</span><strong>Document studio</strong></div></div><div className="workspace-right">{user && onLogout ? <AccountControls onProfileChange={setSidebarProfileOpen} ref={accountControls} user={user} onLogout={onLogout} signingOut={signingOut} disabled={taskBusy || uploading || !!deletingId || visibleDocs.some(doc => processing.current.has(doc.id))} documentCount={visibleDocs.filter(doc => !doc.guest).length} loadingDocuments={loadingDocs}/> : guestMode ? <button className="guest-sign-in" onClick={signIn}><LogIn size={14}/><span>Sign in</span><ArrowRight size={14}/></button> : <span className="header-avatar">ME</span>}</div></header>
-      <div className="studio-heading"><div><div className="eyebrow">{guestMode ? 'START WITH A PDF. FOLLOW YOUR CURIOSITY.' : 'YOUR DOCUMENTS. A CLEARER PICTURE.'}</div><h1>Room for a little <em>clarity.</em></h1><p>{guestMode ? 'Preview a document freely. Sign in when you are ready to ask.' : 'Read closely. Ask freely. Connect the dots.'}</p></div><button className="top-upload" disabled={uploading || loadingDocs || taskBusy} onClick={openUpload}>{uploading ? 'Adding your document...' : 'Add a document'}<ArrowUpRight size={16}/></button></div>
-      <div className="studio-toolbar"><div className="studio-document"><span className="studio-document-icon"><FileText size={14}/></span><span title={activeDoc?.name}>{activeDoc?.name || 'Your document workspace'}</span>{activeDoc && <span className="document-state"><span className="status-dot"/>{activeDoc.guest ? 'Local preview' : activeDoc.status === 'processing' ? 'Preparing' : activeDoc.status === 'ready' ? 'Ready to explore' : 'PDF'}</span>}</div><div className="studio-toolbar-actions"><button className="studio-add-document" aria-label="Add a document" onClick={openUpload} disabled={uploading || loadingDocs || taskBusy}><FileText size={14}/><span>Add PDF</span></button><div className="view-switch" role="group" aria-label="Workspace view"><button aria-label="Read & ask" aria-pressed={chatOpen} onClick={() => { setChatFocus(false); setChatOpen(true); }}><MessageSquare size={13}/><span className="view-label-wide">Read & ask</span><span className="view-label-mobile">Ask</span></button><button aria-label="Read only" aria-pressed={!chatOpen} onClick={() => { setChatFocus(false); setChatOpen(false); }}><BookOpen size={13}/><span className="view-label-wide">Read only</span><span className="view-label-mobile">Read</span></button></div></div></div>
+      <header className="workspace-header"><div className="workspace-left">{guestStart ? <div className="guest-header-brand"><BookOpen size={23} strokeWidth={1.6}/><span>docmind<span className="guest-brand-mark">&reg;</span></span></div> : <><button className="tool-button mobile-menu" aria-label="Open navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Menu size={20}/></button><div className="breadcrumb"><FolderOpen size={16}/><span>Workspace</span><span className="crumb-sep">/</span><strong>Document studio</strong></div></>}</div><div className="workspace-right">{authenticated && <UsageDashboard usageState={usageState} open={usageOpen} returnFocusRef={usageReturnFocus} onOpen={event => { usageReturnFocus.current = event.currentTarget; setPolicyOpen(false); setUsageOpen(true); }} onClose={() => setUsageOpen(false)}/ >}{user && onLogout ? <AccountControls onProfileChange={setSidebarProfileOpen} ref={accountControls} user={user} onLogout={onLogout} signingOut={signingOut} disabled={taskBusy || uploading || !!deletingId || visibleDocs.some(doc => processing.current.has(doc.id))} documentCount={visibleDocs.filter(doc => !doc.guest).length} loadingDocuments={loadingDocs}/> : guestMode ? <button className="guest-sign-in" onClick={signIn}><LogIn size={14}/><span>Sign in</span><ArrowRight size={14}/></button> : <span className="header-avatar">ME</span>}</div></header>
+      {guestStart ? <GuestWelcome onUpload={openUpload} uploading={uploading}/> : <>
+      <div className="studio-heading"><div><div className="eyebrow">{guestMode ? 'PDF PREVIEW' : 'DOCUMENT LIBRARY'}</div><h1>Document <em>workspace</em></h1><p>{guestMode ? 'Preview your PDF, then sign in to ask questions.' : 'Upload PDFs, manage conversations and review source references.'}</p></div><button className="top-upload" disabled={uploading || loadingDocs || taskBusy || Boolean(uploadRestriction)} title={uploadReason} onClick={openUpload}>{uploading ? 'Adding your document...' : 'Add a document'}<ArrowUpRight size={16}/></button></div>
+      <div className="studio-toolbar"><div className="studio-document"><span className="studio-document-icon"><FileText size={14}/></span><span title={activeDoc?.name}>{activeDoc?.name || 'Your document workspace'}</span>{activeDoc && <span className="document-state"><span className="status-dot"/>{activeDoc.guest ? 'Local preview' : activeDoc.status === 'processing' ? 'Preparing' : activeDoc.status === 'ready' ? 'Ready to ask' : 'PDF'}</span>}</div><div className="studio-toolbar-actions"><button className="studio-add-document" aria-label="Add a document" onClick={openUpload} disabled={uploading || loadingDocs || taskBusy || Boolean(uploadRestriction)} title={uploadReason}><FileText size={14}/><span>Add PDF</span></button><div className="view-switch" role="group" aria-label="Workspace view"><button aria-label="Read & ask" aria-pressed={chatOpen} onClick={() => { setChatFocus(false); setChatOpen(true); }}><MessageSquare size={13}/><span className="view-label-wide">Read & ask</span><span className="view-label-mobile">Ask</span></button><button aria-label="Read only" aria-pressed={!chatOpen} onClick={() => { setChatFocus(false); setChatOpen(false); }}><BookOpen size={13}/><span className="view-label-wide">Read only</span><span className="view-label-mobile">Read</span></button></div></div></div>
       <div className={`workspace-content ${chatOpen ? '' : 'reading-mode'} ${chatFocus ? 'chat-focused' : ''}`} style={{ '--assistant-width': chatWidth + 'px' }}>
         {chatOpen && <WorkspaceDivider width={chatWidth} onChange={setChatWidth}/>}
-        <Suspense fallback={<section className="viewer-section"><div className="pdf-loading" role="status">Preparing the document reader...</div></section>}><PDFViewer key={activeId || 'empty'} doc={activeDoc} onUpload={openUpload} goToPage={jumpPage} apiMode={USE_REAL_API} guestMode={guestMode}/></Suspense>
-        {chatOpen && <ChatErrorBoundary key={(userId || 'guest') + ':' + activeId}><ChatPanel expanded={chatFocus} onExpand={() => setChatFocus(value => !value)} doc={activeDoc} messages={activeApi ? serverChat.messages : chats[activeId] || []} guestMode={Boolean(activeDoc?.guest || guestMode)} conversations={serverChat.conversations} activeChatId={serverChat.activeChatId} onSelectChat={serverChat.selectConversation} onNewChat={serverChat.newConversation} historyLoading={activeApi && serverChat.historyLoading} historyError={activeApi ? serverChat.historyError : ''} onRetryHistory={serverChat.retryHistory} hasOlder={activeApi && serverChat.pagination?.hasMore && !!serverChat.pagination?.before} onLoadOlder={serverChat.loadOlder} sendError={transferError || (activeApi ? serverChat.sendError : '')} sendErrorAction={transferError ? 'retry' : serverChat.sendErrorAction} generation={activeApi ? serverChat.generation : null} transport={activeApi ? serverChat.transport : null} onStop={serverChat.stopGenerating} onRetrySend={transferError ? () => send(queuedQuestion?.question || '') : serverChat.retryQuestion} onSend={send} onClear={() => { if (activeApi) serverChat.newConversation(); else setChats(previous => ({ ...previous, [activeId]: [] })); }} onCitation={page => { setJumpPage({ page }); setChatFocus(false); if (window.matchMedia('(max-width: 1101px)').matches) setChatOpen(false); }} busy={taskBusy} waiting={isAnswerPending(pendingDocId, activeId) || transferWaiting} preparing={transferWaiting} restoreDraft={queuedQuestion && queuedQuestion.docId === activeId && !queuedQuestion.resume ? queuedQuestion : null} unavailable={activeApi && (activeDoc?.status !== 'ready' || deletingId === activeId || !serverChat.historyReady)} apiMode={activeApi}/></ChatErrorBoundary>}
+        <Suspense fallback={<section className="viewer-section"><div className="pdf-loading" role="status">Preparing the document reader...</div></section>}><PDFViewer key={activeId || 'empty'} doc={activeDoc} expired={activeExpired} onError={reportQuota} uploadReason={uploadReason} onUpload={openUpload} goToPage={jumpPage} apiMode={USE_REAL_API} guestMode={guestMode}/></Suspense>
+        {chatOpen && <ChatErrorBoundary key={(userId || 'guest') + ':' + activeId}><ChatPanel usage={usageData} usageLoading={usageState.loading} onRefreshUsage={usageState.refresh} quotaReason={chatRestriction ? friendlyError(chatRestriction, 'chat', usageData) : ''} newChatReason={newChatReason} remainingInChat={remainingInChat} now={usageState.now} deletingChatId={serverChat.deletingChatId} deleteError={serverChat.deleteError} onDeleteChat={serverChat.removeConversation} expanded={chatFocus} onExpand={() => setChatFocus(value => !value)} doc={activeDoc} messages={activeApi ? serverChat.messages : chats[activeId] || []} guestMode={Boolean(activeDoc?.guest || guestMode)} conversations={serverChat.conversations} activeChatId={serverChat.activeChatId} onSelectChat={serverChat.selectConversation} onNewChat={serverChat.newConversation} historyLoading={activeApi && serverChat.historyLoading} historyError={activeApi ? serverChat.historyError : ''} onRetryHistory={serverChat.retryHistory} hasOlder={activeApi && serverChat.pagination?.hasMore && !!serverChat.pagination?.before} onLoadOlder={serverChat.loadOlder} sendError={transferError || (activeApi ? serverChat.sendError : '')} sendErrorAction={transferError ? 'retry' : serverChat.sendErrorAction} generation={activeApi ? serverChat.generation : null} transport={activeApi ? serverChat.transport : null} onStop={serverChat.stopGenerating} onRetrySend={transferError ? () => send(queuedQuestion?.question || '') : serverChat.retryQuestion} onSend={send} onClear={() => { if (activeApi) serverChat.newConversation(); else setChats(previous => ({ ...previous, [activeId]: [] })); }} onCitation={page => { setJumpPage({ page }); setChatFocus(false); if (window.matchMedia('(max-width: 1279px)').matches) setChatOpen(false); }} busy={taskBusy} waiting={isAnswerPending(pendingDocId, activeId) || transferWaiting} preparing={transferWaiting} restoreDraft={queuedQuestion && queuedQuestion.docId === activeId && !queuedQuestion.resume ? queuedQuestion : serverChat.rejectedDraft} unavailable={activeApi && (Boolean(chatRestriction) || activeDoc?.status !== 'ready' || deletingId === activeId || !serverChat.historyReady)} apiMode={activeApi}/></ChatErrorBoundary>}
       </div>
-      <footer className="workspace-footer"><span><span className="status-dot"/>{guestMode ? 'Guest preview - Your PDF stays on this device until you sign in' : authenticated ? 'Private documents and saved conversations' : 'All files stored locally'}</span><span>Made for curious minds <span className="footer-star" aria-hidden="true">*</span></span></footer>
+      <footer className="workspace-footer"><span><span className="status-dot"/>{guestMode ? 'Guest preview - Your PDF stays on this device until you sign in' : authenticated ? 'Private documents and saved conversations' : 'All files stored locally'}</span><span>DocMind AI <span className="footer-star" aria-hidden="true">*</span></span></footer>
+      </>}
     </main>
-    {dragging && <div className="drop-overlay"><FolderOpen size={40}/><h2>A new perspective starts here.</h2><p>Drop your PDFs here - Up to {USE_REAL_API ? 10 : 20} MB each</p></div>}
+    {dragging && <div className="drop-overlay"><FolderOpen size={40}/><h2>Upload PDF documents</h2><p>Drop your PDFs here - Up to {USE_REAL_API ? 10 : 20} MB each</p></div>}
     {toast && <div className="toast" role="status"><Info size={17}/>{toast}<button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={15}/></button></div>}
   </div>;
 }

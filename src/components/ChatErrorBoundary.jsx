@@ -10,8 +10,8 @@ export default class ChatErrorBoundary extends Component {
     if (!this.state.failed) return this.props.children;
     return <aside className="chat-panel chat-recovery" role="alert">
       <span className="assistant-icon"><BookOpen size={25}/></span>
-      <h3>Let's bring your conversation back.</h3>
-      <p>There was a problem displaying the chat. Your PDF and saved messages are still here.</p>
+      <h3>Chat could not be displayed</h3>
+      <p>Your PDF and saved messages are still available. Select Try again to reload the chat view.</p>
       <button onClick={() => this.setState({ failed: false })}><RotateCcw size={15}/> Try again</button>
     </aside>;
   }

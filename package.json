@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/api.test.js tests/session-chat.test.js tests/streaming.test.js"
+    "test": "node --test tests/api.test.js tests/session-chat.test.js tests/streaming.test.js tests/usage.test.js"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",

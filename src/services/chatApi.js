@@ -1,6 +1,7 @@
 ﻿import { request, unwrap, ApiError } from './http.js';
 import { normalizeMessages } from '../lib/chat.js';
 import { requestStream } from './http.js';
+import { chatQuestionQuota } from '../lib/usage.js';
 import { consumeSSE } from '../lib/sse.js';
 
 function normalizeChat(raw, documentId) {
@@ -25,7 +26,7 @@ export async function getChatMessages(chatId, before, options = {}) {
   const messages = Array.isArray(data) ? data : data?.messages;
   if (!Array.isArray(messages)) throw new ApiError('The server returned an invalid message history.');
   const page = result?.pagination || data?.pagination;
-  return { data: normalizeMessages(messages), pagination: { hasMore: page?.hasMore === true, before: page?.before || page?.nextCursor || null } };
+  return { data: normalizeMessages(messages), chat: data?.chat ?? result?.chat, quota: chatQuestionQuota(data?.chat ?? data?.quota ?? result?.quota ?? data), pagination: { hasMore: page?.hasMore === true, before: page?.before || page?.nextCursor || null } };
 }
 export async function sendChatMessage(chatId, question, requestId, options = {}) {
   const data = unwrap(await request('/chats/' + encodeURIComponent(chatId) + '/messages', {
@@ -65,7 +66,7 @@ export async function streamChatMessage(chatId, question, { signal, onEvent = ()
     }
     onEvent({ event: 'open', data: {} });
     await consumeSSE(response, frame => {
-      if (!['status', 'meta', 'token', 'done', 'error', 'cancelled'].includes(frame.event)) return;
+      if (!['accepted', 'status', 'meta', 'token', 'done', 'error', 'cancelled'].includes(frame.event)) return;
       let data;
       try { data = JSON.parse(frame.data); }
       catch { throw new ApiError('Invalid streaming event.', 0, 'STREAM_PROTOCOL'); }
@@ -79,7 +80,7 @@ export async function streamChatMessage(chatId, question, { signal, onEvent = ()
         text += data.text;
         if (text.length > 200000) throw new ApiError('Answer exceeds the streaming limit.', 0, 'STREAM_PROTOCOL');
       }
-      if (frame.event === 'error') throw new ApiError(typeof data.message === 'string' ? data.message : 'Generation failed.', 0, 'STREAM_ERROR');
+      if (frame.event === 'error') throw new ApiError(typeof data.message === 'string' ? data.message : 'Generation failed.', Number(data.status) || 0, typeof data.code === 'string' ? data.code : 'STREAM_ERROR', data.details ?? data.data);
       if (frame.event === 'done') {
         if (data.status !== 'completed' || !data.messageId || data.chatId !== chatId) throw new ApiError('Incomplete done event.', 0, 'STREAM_PROTOCOL');
         if (!text.trim()) throw new ApiError('The model returned an empty answer.', 0, 'STREAM_EMPTY');
@@ -98,3 +99,5 @@ export async function streamChatMessage(chatId, question, { signal, onEvent = ()
     throw new ApiError('The connection ended while receiving the answer.', 0, 'STREAM_INTERRUPTED');
   }
 }
+
+export const deleteChat = (chatId, options = {}) => request('/chats/' + encodeURIComponent(chatId), { ...options, method: 'DELETE' });

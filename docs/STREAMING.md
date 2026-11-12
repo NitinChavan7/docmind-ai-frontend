@@ -1,8 +1,6 @@
 # Streaming chat integration
 
-The existing React/Vite workspace, login and Google sign-in, guest PDF flow,
-document viewer, and per-document conversations remain in place. No framework,
-dependency, account flow or visual redesign was introduced for streaming.
+The chat service consumes authenticated POST SSE responses, displays incremental answers and confirms saved messages after completion.
 
 ## Request and response
 
@@ -26,19 +24,18 @@ search routing, so the client does not send it. It also does not invent a stream
 requestId or cancellation endpoint. The original `sendChatMessage` method and
 public `sendMessage` export remain available; `streamMessage` is also exported.
 
-The first received text appears immediately; buffered bursts are revealed at
-16 ms intervals inside the active bubble. The LIVE badge appears only after a successful
-SSE response opens. If the route falls back to complete-response delivery, the
-interface says so explicitly instead of making it look like a live stream.
+The first received text appears immediately. Subsequent deltas are batched at
+16 ms intervals and displayed in full, without a simulated typing queue. This
+keeps rendering bounded while avoiding an extra delay after the backend finishes.
+Only the active bubble subscribes to live text; completed answer formatting is
+memoized so unrelated status updates do not reparse previous answers.
 
-Received text and visible text are separate. A server response can contain many
-token events and done in one browser read; done no longer flushes that entire
-buffer into the bubble. The frontend finishes revealing those actual received
-characters before replacing the temporary bubble with saved history. The local
-Finishing your answer stage describes this display work, not another model call.
-Stop freezes the visible prefix and releases any pending completion; switching
-chats or unmounting discards the reveal queue. A larger backlog is revealed more
-quickly to keep long answers responsive, and reduced-motion mode skips pacing.
+The LIVE badge appears after an SSE response opens. A complete-response fallback
+is labelled separately. Stop freezes visible text and cancels the request;
+switching chats or unmounting disposes the pending update. Saved-history
+confirmation still happens after completion. Sources stay collapsed by default
+and are shown after live output ends. The composer remains editable during
+generation so a next question can be drafted; sending waits for the active turn.
 
 The client checks HTTP status before consuming the body. Shared authentication
 refresh and CSRF recovery may retry a rejected HTTP request before streaming
@@ -64,6 +61,12 @@ Web-search stage handling is forward-compatible UI support, not a claim that
 the current document-only backend searches the web. Only supplied HTTP(S) source
 URLs become external links; HTML and script URLs are never injected or executed.
 
+Quota errors in HTTP responses or SSE `error` events retain their standardized
+`code` and `details` for the shared friendly-error mapper. They do not trigger a
+fallback or automatic generation replay. An optional `accepted` event can carry
+question-count metadata; the first accepted/meta event and final outcome refresh
+account usage, while token events do not. See [usage integration](USAGE.md).
+
 ## Stop, navigation and persistence
 
 Stop generating is above the question composer on desktop and mobile. It
@@ -74,7 +77,7 @@ check, preventing late tokens from crossing conversations. App unmount also
 disposes the live bubble's timer/subscribers. Reading-only mode hides the
 assistant without discarding its request; return to Ask to stop or see the answer.
 
-The local backend now registers `/api/chats/:chatId/stream` in
+The backend registers `/api/chats/:chatId/stream` in
 `modules/chat/index.js`. Its controller sends the assistant MongoDB ID in meta
 and done, omits mode routing, and commits a complete turn before done. It
 aborts upstream work on disconnect and discards unfinished turns before the
@@ -90,14 +93,11 @@ visible with a Save not confirmed label and a Reload saved messages action.
 Stopped and interrupted text is also explicitly marked; it is not written to
 browser storage or represented as a saved successful answer.
 
-The final local route/controller were checked against this contract. No backend
-source was modified by this frontend implementation. An older running backend
-may need a restart to serve the route; otherwise the client uses the documented
-non-stream fallback.
+The backend uses Groq for generation and Qdrant for document retrieval. If an older backend does not serve the stream route, the client uses the documented non-stream fallback.
 
 ## Exact manual checks
 
-1. Start MongoDB, ChromaDB and Ollama using the backend's existing setup.
+1. Configure MongoDB, Supabase, Qdrant Cloud Inference and Groq using the backend README.
    In PowerShell, start Express (or keep the already-running backend):
 
    ```powershell
@@ -153,7 +153,7 @@ non-stream fallback.
    Expect a friendly failure and an incomplete/unconfirmed label, not a saved
    success. Reconnect and click Reload saved messages. Verify there was no
    automatic second POST. Empty answers and streams ending without done must
-   also fail clearly. A cold Ollama startup should retain the processing card
+   also fail clearly. A slow upstream response should retain the processing card
    and Stop control rather than show an empty screen.
 
 9. Against an older backend with no stream route, expect 404 followed by one
@@ -164,51 +164,8 @@ non-stream fallback.
 10. Recheck registration returning to sign-in, Google sign-in, profile/sign-out
     confirmation, PDF upload/index retry, zoom/page navigation and saved chats.
 
-## Files changed
-
-Created:
-
-- `src/lib/sse.js`: incremental SSE framing, decoding and reader cleanup.
-- `src/lib/liveAnswer.js`: batched bubble subscription and lifecycle cleanup.
-- `tests/streaming.test.js`: parser, streaming service, cancellation and live-state tests.
-- `docs/STREAMING.md`: this contract, persistence policy and manual checklist.
-
-Modified:
-
-- `src/services/http.js`: raw streaming responses through shared auth/CSRF handling.
-- `src/services/chatApi.js`, `src/services/api.js`: reusable streaming API and fallback.
-- `src/hooks/useDocumentChat.js`: single live turn, Stop, request isolation and reconciliation.
-- `src/components/ChatPanel.jsx`: live text, stages, Stop, incomplete states and web sources.
-- `src/App.jsx`, `src/components/Sidebar.jsx`: generation controls and safe document switches.
-- `src/lib/chat.js`, `src/lib/errors.js`: safe web sources and friendly streaming failures.
-- `src/styles/workspace.css`: controls and status styling within the existing theme.
-- `package.json`: include streaming tests in `npm test`.
-- `README.md`: streaming behavior, limitations and testing notes.
-
 ## Verification
 
-Run frontend checks with `npm test` and `npm run build`.
-Node tests exercise the parser across chunk boundaries, byte-split UTF-8,
-incremental notifications, abort/disposal, cookies/CSRF/auth refresh, route
-fallback, terminal/error cases and source-link safety. Browser checks use the
-Playwright skill with a temporary real HTTP SSE fixture and mocked account,
-document and history endpoints, including reload consistency and failure states.
-The neighboring backend's `node --test tests/streaming.test.js` uses its own
-test MongoDB and simulated upstream model. No real Google credentials or real
-Ollama answer quality is established by those fixture-based checks.
+Run `npm test` and `npm run build` from the frontend root. The fixtures cover the transport/parser, authentication recovery, fallback, cancellation and live-answer lifecycle. Browser checks with mocked APIs also cover collapsed sources, document switching, editable drafts during generation, stopped requests, reduced motion and layouts at 320 px, 390 px and short landscape widths.
 
-A separate browser verification also exercised the actual Express application,
-registration/login, PDF upload, real Chroma indexing and local Ollama models
-(`llama3.2:3b` and `nomic-embed-text`) against a temporary MongoDB database. No
-API/model responses were mocked in that run. The answer visibly grew through
-76 text updates before completion, saved-history confirmation succeeded, and
-Stop was verified on a follow-up. The run used an isolated account database and
-the bundled sample PDF; existing user documents/accounts were not used or changed. This confirms delivery through
-the real services, not factual accuracy for arbitrary uploaded documents.
-
-A buffered-response browser regression also delivered all token events and done
-in a single response chunk. The 450-character answer still appeared through 88
-visible updates before the single history reconciliation. The test also stopped
-the queued reveal and checked that it retained one assistant bubble. Unit tests
-cover completion ordering, cancellation, emoji boundaries and disposal of a
-pending reveal.
+Use the manual checks above against a configured backend to verify the complete upload, retrieval, generation and persistence path. Live Google sign-in needs a valid OAuth client. Fixture-based checks do not establish cloud-model answer quality or deployed proxy behavior.

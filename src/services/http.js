@@ -2,8 +2,8 @@
 // export const API_BASE = configured.endsWith('/api') ? configured : configured + '/api';
 
 const configured =
-  import.meta.env.VITE_API_URL ??
-  (import.meta.env.DEV ? "http://localhost:5000" : "");
+  import.meta.env?.VITE_API_URL ??
+  ((import.meta.env?.DEV ?? true) ? "http://localhost:5000" : "");
 
 export const API_BASE = configured.replace(/\/+$/, "").endsWith("/api")
   ? configured.replace(/\/+$/, "")
@@ -22,11 +22,12 @@ const publicPaths = new Set([
 ]);
 
 export class ApiError extends Error {
-  constructor(message, status = 0, code) {
+  constructor(message, status = 0, code, details) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 export const resetCredentials = () => {
@@ -77,7 +78,8 @@ async function parse(response) {
         (typeof result?.error === "string" && result.error) ||
         "API request failed (" + response.status + ").",
       response.status,
-      result?.code,
+      result?.code ?? result?.error?.code,
+      result?.details ?? result?.error?.details ?? result?.data,
     );
   }
   return result;

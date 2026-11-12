@@ -1,6 +1,9 @@
+import { quotaMessage } from './usage.js';
 // Translate transport/backend failures at the UI boundary. Keep server internals
 // in the service layer, never in account forms, document notices or chat bubbles.
-export function friendlyError(error, context = 'general') {
+export function friendlyError(error, context = 'general', usage) {
+  const quota = quotaMessage(error, usage);
+  if (quota) return quota;
   const status = Number(error?.status);
   const streamErrors = {
     STREAM_EMPTY: 'No answer came through. Reload saved messages, then try your question again.',
@@ -48,11 +51,11 @@ export function friendlyError(error, context = 'general') {
 
 export function validateAuthFields({ name, email, password }, registering) {
   const errors = {};
-  if (registering && !name?.trim()) errors.name = 'What should we call you?';
+  if (registering && !name?.trim()) errors.name = 'Enter your name.';
   if (!email?.trim()) errors.email = 'Enter your email address to continue.';
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = 'Use a complete email address, like you@example.com.';
   if (!password) errors.password = 'Enter your password to continue.';
   else if (registering && password.length < 8) errors.password = 'Choose a password with at least 8 characters.';
-  else if (new TextEncoder().encode(password).length > 72) errors.password = 'Please use a shorter password. A few long words work well.';
+  else if (new TextEncoder().encode(password).length > 72) errors.password = 'Please use a shorter password.';
   return errors;
 }

@@ -66,16 +66,16 @@ const AccountControls = forwardRef(function AccountControls({ user, onLogout, di
       <div className="account-popover-top"><span>YOUR ACCOUNT</span><button className="tool-button" aria-label="Close profile" onClick={closeProfile}><X size={15}/></button></div>
       <div className="account-identity"><span className="account-avatar">{initials}</span><h2>{user.name}</h2><p>{user.email}</p><span className="account-session"><span className="status-dot"/>Signed in</span></div>
       <dl className="account-details"><div><dt><Mail size={15}/>Email address</dt><dd>{user.email}</dd></div><div><dt><ShieldCheck size={15}/>Sign-in method</dt><dd>{user.provider === 'google' ? 'Google' : user.provider === 'local' ? 'Email & password' : 'Connected account'}</dd></div><div><dt><FolderOpen size={15}/>Your library</dt><dd>{loadingDocuments ? 'Loading documents...' : `${documentCount} ${documentCount === 1 ? 'document' : 'documents'}`}</dd></div></dl>
-      <div className="account-popover-footer"><span>Your space to read, think, and explore.</span><button disabled={disabled || pending} onClick={() => requestLogout('profile')}><LogOut size={15}/>Sign out<ArrowRight size={14}/></button></div>
+      <div className="account-popover-footer"><span>Documents and conversations linked to your account.</span><button disabled={disabled || pending} onClick={() => requestLogout('profile')}><LogOut size={15}/>Sign out<ArrowRight size={14}/></button></div>
     </section>, document.body)}
 
     {logoutOpen && <Modal labelledBy={titleId} describedBy={descriptionId} busy={pending} onClose={() => setLogoutOpen(false)} returnFocusRef={returnFocus}>
       <div className="logout-card">
         <div className="logout-card-top"><span className="logout-brand"><BookOpen size={17}/>docmind</span><button className="tool-button" aria-label="Close sign-out confirmation" disabled={pending} onClick={() => setLogoutOpen(false)}><X size={17}/></button></div>
         <div className="logout-symbol"><LogOut size={25} strokeWidth={1.5}/></div>
-        <span className="logout-eyebrow">UNTIL NEXT TIME</span>
-        <h2 id={titleId}>Ready to sign out?</h2>
-        <p id={descriptionId}>Your documents and saved conversations stay in your account. Pick up where you left off whenever you return.</p>
+        <span className="logout-eyebrow">SIGN OUT</span>
+        <h2 id={titleId}>Sign out of DocMind?</h2>
+        <p id={descriptionId}>Your uploaded documents and saved conversations will remain in your account.</p>
         <div className="logout-account"><span className="header-avatar">{initials}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><ShieldCheck size={16}/></div>
         {error && <p className="logout-error" role="alert">{error}</p>}
         <div className="logout-actions"><button data-autofocus className="logout-cancel" disabled={pending} onClick={() => setLogoutOpen(false)}>Stay here</button><button className="logout-confirm" disabled={disabled || pending} onClick={confirmLogout}>{pending ? <LoaderCircle size={15} className="spinner"/> : <LogOut size={15}/ >}{pending ? 'Signing out...' : 'Yes, sign out'}</button></div>

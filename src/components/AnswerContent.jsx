@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, memo } from 'react';
 
 // A small, deliberately text-only renderer: model output never becomes HTML.
 function inline(text) {
@@ -8,7 +8,7 @@ function inline(text) {
         : <Fragment key={index}>{part}</Fragment>);
 }
 
-export default function AnswerContent({ text }) {
+function AnswerContent({ text }) {
   const blocks = text.replace(/\r\n/g, '\n').split(/\n\s*\n/);
   return <div className="answer-content">{blocks.map((block, index) => {
     const lines = block.split('\n');
@@ -23,3 +23,5 @@ export default function AnswerContent({ text }) {
       : <Fragment key={i}>{i > 0 && <br/>}{inline(line)}</Fragment>)}</div>;
   })}</div>;
 }
+
+export default memo(AnswerContent);

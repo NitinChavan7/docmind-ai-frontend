@@ -14,6 +14,7 @@ export function normalizeDocument(raw) {
     status: typeof raw.status === 'string' ? raw.status.toLowerCase() : 'uploaded',
     pageCount: Number(raw.pageCount) || 0,
     fileUrl: getDocumentFileUrl(id),
+    expiresAt: typeof raw.expiresAt === 'string' ? raw.expiresAt : null,
     remote: true,
   };
 }
