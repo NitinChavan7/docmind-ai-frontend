@@ -193,7 +193,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
     const position = docsRef.current.findIndex(item => item.id === doc.id);
     const fallbackId = visibleDocs.find(item => item.id !== doc.id)?.id || null;
     deleting.current.add(doc.id); removedIds.current.add(doc.id);
-    setDeletingId(doc.id); setToast(''); setDeleteTarget(null);
+    setDeletingId(doc.id); setToast('');
     // Update the library immediately; retain chat data until the server confirms.
     setDocs(previous => previous.filter(item => item.id !== doc.id));
     setActiveId(previous => previous === doc.id ? fallbackId : previous);

@@ -578,3 +578,22 @@ body{min-width:320px;overflow:hidden}
 .delete-document-actions>button:first-child:hover{background:#edf2e5}
 .delete-document-actions>button:focus-visible{outline:2px solid #72935a;outline-offset:3px}
 @media(max-width:560px){.delete-document-card{padding:18px 20px 21px}.delete-document-card h2{font-size:22px}.delete-document-top{margin-bottom:18px}.delete-document-actions>button{flex:1;padding:11px 10px}.delete-document-file{padding:12px}.delete-document-actions{gap:8px}}
+
+/* Preparation is an indeterminate state, not a percentage estimate. */
+.document-preparation{display:flex;flex-direction:column;align-items:center;width:min(100%,350px);text-align:center;padding:10px 0}
+.document-preparation-icon{position:relative;display:grid;place-items:center;width:72px;height:76px;border:1px solid #dce6cf;border-radius:20px;background:linear-gradient(145deg,#f4f8ee,#eaf1e1);color:#6c8756;margin-bottom:23px;box-shadow:0 8px 24px #38522a08}
+.document-preparation-icon>.spinner{position:absolute;bottom:-5px;right:-5px;box-sizing:content-box;padding:5px;border:3px solid #fffef9;background:#edf3e6;border-radius:50%;color:#54793e}
+.document-preparation-label{font-size:9px;letter-spacing:1.6px;color:#7a8d6a;margin-bottom:13px}
+.document-preparation h3{font:29px/1.25 Georgia,serif;letter-spacing:-.6px;color:#36523a;margin:0 0 14px}
+.document-preparation p{color:#798a6d;font-size:13px;line-height:1.8;margin:0;max-width:280px}
+.document-preparation-track{position:relative;display:block;width:140px;height:3px;margin-top:26px;overflow:hidden;border-radius:10px;background:#e8eedf}
+.document-preparation-track>span{position:absolute;inset:0 auto 0 0;width:45%;border-radius:10px;background:#9ab57c;animation:document-preparing 1.6s ease-in-out infinite}
+@keyframes document-preparing{0%{transform:translateX(-105%)}100%{transform:translateX(325%)}}
+.chat-index-status{display:flex;align-items:center;gap:9px;line-height:1.7}
+.delete-document-dialog.is-removing .delete-document-symbol{background:#edf3e7;border-color:#dce6cf;color:#64874e;transition:background .18s,border-color .18s,color .18s}
+.delete-document-dialog.is-removing .delete-document-file{animation:document-remove .3s ease-in forwards;transform-origin:center left}
+.delete-document-dialog.is-removing{animation:delete-dialog-exit .32s ease-in forwards}
+.delete-document-dialog.is-removing .delete-document-confirm{background:#866f63;border-color:#866f63;opacity:1}
+@keyframes document-remove{to{opacity:0;transform:translateX(18px) scale(.96)}}
+@keyframes delete-dialog-exit{0%,55%{opacity:1;transform:scale(1)}100%{opacity:0;transform:translateY(7px) scale(.98)}}
+@media(prefers-reduced-motion:reduce){.document-preparation-track>span,.delete-document-dialog.is-removing,.delete-document-dialog.is-removing .delete-document-file{animation:none}.document-preparation-track>span{width:100%;background:#b3c69a}}

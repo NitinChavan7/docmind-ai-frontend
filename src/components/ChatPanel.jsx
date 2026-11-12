@@ -90,12 +90,14 @@ export default function ChatPanel({ usage, usageLoading, onRefreshUsage, quotaRe
   const submit = event => {
     event.preventDefault();
     const question = input.trim();
-    if (!doc || !question || busy || unavailable) return;
+    if (!doc || !question || busy || unavailable || doc.pendingUpload || (apiMode && doc.status !== 'ready')) return;
     setInput('');
     followBottom.current = true;
     onSend(question);
   };
 
+  const documentPreparing = Boolean(doc && (doc.pendingUpload || (apiMode && doc.status === 'processing')));
+  const composerUnavailable = unavailable || documentPreparing;
   return <aside className="chat-panel">
     <div className="chat-header">
       <div className="chat-heading"><span className="assistant-icon"><BookOpen size={18}/></span><div><strong>Document assistant</strong><small>{doc ? 'Answers from your PDF' : 'Document questions and source references'}</small></div></div>
@@ -107,7 +109,8 @@ export default function ChatPanel({ usage, usageLoading, onRefreshUsage, quotaRe
     {newChatReason && !quotaReason && <div className="quota-notice">{usage && <span>{usage.used.chats} / {usage.limits.chats} conversations active. </span>}{newChatReason}</div>}
     {historyError && <div role="alert" className="conversation-error">{historyError} <button onClick={onRetryHistory}>Retry</button></div>}
 
-    {apiMode && doc && doc.status !== 'ready' && <div className="chat-index-status" role="status">{doc.status === 'processing' ? 'Indexing your PDF. Questions will be available when it is ready.' : 'This document needs indexing. Use the control in your library to prepare it.'}</div>}
+    {apiMode && doc && doc.status !== 'ready' && !documentPreparing && <div className="chat-index-status" role="status">This PDF is not ready for questions. Select Prepare document in your library to try again.</div>}
+    {documentPreparing && safeMessages.length > 0 && <div className="chat-index-status" role="status"><LoaderCircle size={14} className="spinner"/>Preparing your PDF for questions. You can keep reading.</div>}
     <div className="chat-scroll-area"><div className="chat-body" ref={body} aria-busy={waiting || false} onScroll={event => {
       const node = event.currentTarget;
       const away = node.scrollHeight - node.scrollTop - node.clientHeight > 90;
@@ -115,13 +118,20 @@ export default function ChatPanel({ usage, usageLoading, onRefreshUsage, quotaRe
     }}>
       {hasOlder && <button className="history-older" disabled={historyLoading||busy} onClick={() => { scrollAnchor.current = { height: body.current.scrollHeight, top: body.current.scrollTop }; onLoadOlder(); }}>Load older messages</button>}
       {safeMessages.length === 0 && !waiting && !historyLoading && !historyError ? <div className="chat-welcome">
-        <div className="chat-welcome-icon"><BookOpen size={30} strokeWidth={1.3}/><span aria-hidden="true">✦</span></div>
+        {documentPreparing ? <div className="document-preparation" role="status">
+          <span className="document-preparation-icon"><FileText size={29} strokeWidth={1.4}/><LoaderCircle size={16} className="spinner"/></span>
+          <span className="document-preparation-label">{doc.pendingUpload ? 'UPLOADING DOCUMENT' : 'PREPARING DOCUMENT'}</span>
+          <h3>{doc.pendingUpload ? 'Uploading your PDF' : 'Getting your PDF ready'}</h3>
+          <p>You can read your PDF now. Questions will be available once preparation is complete.</p>
+          <span className="document-preparation-track" aria-hidden="true"><span/></span>
+        </div> : <>        <div className="chat-welcome-icon"><BookOpen size={30} strokeWidth={1.3}/><span aria-hidden="true">✦</span></div>
         {doc ? <><h3>Ask about this<br/><em>document</em></h3><p>Enter a question or select a suggested prompt.</p></> : <><h3>Select a PDF<br/><em>to start</em></h3><p>Add a document to ask questions about its contents.</p></>}
         {doc && <div className="suggestions">{examples.map(({ icon: Icon, title, question }, index) =>
-          <button key={title} disabled={!doc || busy || unavailable} onClick={() => { followBottom.current = true; onSend(question); }}>
+          <button key={title} disabled={!doc || busy || composerUnavailable} onClick={() => { followBottom.current = true; onSend(question); }}>
             <span className={`prompt-icon prompt-${index}`}><Icon size={17}/></span><span><strong>{title}</strong></span><ArrowUpRight size={15}/>
           </button>
         )}</div>}
+</>}
 
       </div> : <div className="message-list" aria-live="polite">
         {safeMessages.map(message => <div key={message.id} className={`message ${message.role} ${message.isError ? 'message-error' : ''}`}>
@@ -148,13 +158,13 @@ export default function ChatPanel({ usage, usageLoading, onRefreshUsage, quotaRe
       {apiMode && usage?.remaining.dailyQuestions === 0 && <p className="quota-reset">Resets {formatReset(usage.dailyResetAt)}</p>}
       {quotaReason && <div className="quota-notice" role="status"><p>{quotaReason}</p><div>{!newChatReason && (remainingInChat === 0 || isExpired(conversations.find(chat => chat._id === activeChatId), now)) && <button onClick={onNewChat}>Start another chat</button>}<button onClick={onRefreshUsage} disabled={usageLoading}>Refresh usage</button></div></div>}
       <form className={`chat-compose ${waiting ? 'is-waiting' : ''}`} onSubmit={submit}>
-        <textarea ref={composer} aria-label="Question about your document" rows={1} placeholder={waiting ? 'Write your next question...' : doc ? 'Ask about your document...' : 'Add a PDF to get started...'} disabled={!doc || unavailable} maxLength={4000} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => {
+        <textarea ref={composer} aria-label="Question about your document" rows={1} placeholder={documentPreparing ? 'Your PDF is being prepared...' : waiting ? 'Write your next question...' : doc ? 'Ask about your document...' : 'Add a PDF to get started...'} disabled={!doc || composerUnavailable} maxLength={4000} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form.requestSubmit(); }
         }}/>
         <div className="compose-bottom">
           <span title={doc?.name}>{waiting ? <LoaderCircle size={12} className="spinner"/> : <FileText size={12}/ >}{doc ? 'PDF context' : 'No document'}</span>
           <span className="compose-shortcut">{input.length > 3500 ? `${input.length}/4000` : '↵ to send'}</span>
-          <button className={`send-button ${waiting ? 'is-pending' : ''}`} disabled={!doc || !input.trim() || busy || unavailable} aria-label={waiting ? 'Waiting for answer' : 'Send message'}>{waiting ? <LoaderCircle size={17} className="spinner"/> : <ArrowUp size={18}/>}</button>
+          <button className={`send-button ${waiting ? 'is-pending' : ''}`} disabled={!doc || !input.trim() || busy || composerUnavailable} aria-label={waiting ? 'Waiting for answer' : 'Send message'}>{waiting ? <LoaderCircle size={17} className="spinner"/> : <ArrowUp size={18}/>}</button>
         </div>
       </form>
       <p>{guestMode ? 'Your PDF stays on this device until you sign in.' : apiMode ? 'Check important details against the source.' : 'Frontend preview - Conversations stay in this browser'}</p>
