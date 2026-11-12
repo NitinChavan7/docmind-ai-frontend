@@ -645,3 +645,7 @@ body{min-width:320px;overflow:hidden}
 .workspace-loading-composer{margin:auto 24px 0;border:1px solid #e1e8d8;border-radius:14px;min-height:110px;background:#fcfdf9}
 @media(max-width:1279px){.workspace-loading-sidebar{display:none}.workspace-loading-header>.workspace-loading-brand{display:flex;font-size:23px}.workspace-loading-location{display:none}.workspace-loading-panels{grid-template-columns:minmax(0,1fr)}.workspace-loading-chat{display:none}.workspace-loading-paper{max-width:570px;padding:55px 42px;min-height:700px}}
 @media(max-width:700px){.workspace-loading-header{min-height:58px;padding:0 16px}.workspace-loading-header>.workspace-loading-brand{font-size:21px}.workspace-loading-status{font-size:10px;gap:6px}.workspace-loading-toolbar{min-height:62px;margin:0 12px;gap:8px}.workspace-loading-toolbar b{width:95px}.workspace-loading-panels{margin:0 9px 9px;border-radius:14px}.workspace-loading-panel-header{min-height:64px;padding:14px}.workspace-loading-paper{width:88%;margin-top:20px;padding:35px 24px}.workspace-loading-paper>b{height:12px}}
+
+/* Keep fit-width measurements stable as PDF height changes. */
+.pdf-scroll{scrollbar-gutter:stable}
+.pdf-scroll>.react-pdf__Document{flex:0 0 auto}

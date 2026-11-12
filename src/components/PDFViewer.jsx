@@ -26,7 +26,7 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
   const pages = loaded.id === source ? loaded.pages : 0;
   const pdfUrl = resource.id === source ? resource.url : null;
   const fileError = resource.id === source ? resource.error : '';
-  const renderWidth = Math.floor(Math.min(width, 780) * scale);
+  const renderWidth = Math.max(1, Math.floor(width * scale));
   const loadingPreview = <PDFSkeleton name={doc?.name} width={renderWidth}/>;
 
   useEffect(() => {
@@ -53,18 +53,35 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
       setPage(Math.min(goToPage.page, pages)); scroll.current?.scrollTo(0, 0);
     }
   }, [goToPage, pages]);
+  const measurePageWidth = node => {
+    const style = window.getComputedStyle(node);
+    // clientWidth excludes the scrollbar, but includes the reader padding.
+    // Reserve the paper's border so the fitted page cannot overflow by 2px.
+    return Math.max(1, Math.floor(node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 2));
+  };
   useEffect(() => {
     const node = scroll.current;
     if (!node) return;
     let frame;
-    const observer = new ResizeObserver(entries => {
-      const next = Math.max(180, Math.floor(entries[0].contentRect.width - 52));
+    const updateWidth = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setWidth(previous => Math.abs(previous - next) >= 2 ? next : previous));
-    });
+      frame = requestAnimationFrame(() => {
+        if (node.clientWidth > 0) setWidth(measurePageWidth(node));
+      });
+    };
+    const observer = new ResizeObserver(updateWidth);
     observer.observe(node);
+    updateWidth();
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
-  }, [source]);
+  }, [source, expired]);
+
+  const fitToWidth = () => {
+    if (scroll.current) {
+      setWidth(measurePageWidth(scroll.current));
+      scroll.current.scrollTo({ left: 0 });
+    }
+    setScale(1);
+  };
 
   const changePage = delta => { setPage(previous => previous + delta); scroll.current?.scrollTo(0, 0); };
   const retryFile = () => { setLoaded({ id: null, pages: 0 }); setRetry(previous => previous + 1); };
@@ -83,11 +100,11 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
           <button className="tool-button" disabled={scale >= 2} onClick={() => setScale(value => Math.min(2, Math.round((value + .1) * 10) / 10))} aria-label="Zoom in" data-tooltip="Zoom in"><ZoomIn size={15}/></button>
         </div>
         <div className="toolbar-divider" aria-hidden="true"/>
-        <button className="tool-button fit-width pdf-fit-direct" disabled={!pages} onClick={() => setScale(1)} data-tooltip="Fit to width" aria-label="Fit to width"><Maximize2 size={14}/></button>
+        <button className="tool-button fit-width pdf-fit-direct" disabled={!pages} onClick={fitToWidth} data-tooltip="Fit to width" aria-label="Fit to width"><Maximize2 size={14}/></button>
         <details ref={tools} className="pdf-more" onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus(); } }}>
           <summary className="tool-button" aria-label="More PDF tools" data-tooltip="More tools"><MoreHorizontal size={18}/></summary>
           <div className="pdf-more-menu">
-            <button className="pdf-fit-menu" disabled={!pages} onClick={event => { setScale(1); event.currentTarget.closest('details').open = false; }}><Maximize2 size={15}/>Fit to width</button>
+            <button className="pdf-fit-menu" disabled={!pages} onClick={event => { fitToWidth(); event.currentTarget.closest('details').open = false; }}><Maximize2 size={15}/>Fit to width</button>
             <a href={pdfUrl || undefined} aria-disabled={!pdfUrl} download={doc.name} onClick={event => { event.currentTarget.closest('details').open = false; }}><Download size={15}/>Download PDF</a>
             <a href={pdfUrl || undefined} aria-disabled={!pdfUrl} target="_blank" rel="noreferrer" onClick={event => { event.currentTarget.closest('details').open = false; }}><Expand size={15}/>Open in new tab</a>
           </div>
