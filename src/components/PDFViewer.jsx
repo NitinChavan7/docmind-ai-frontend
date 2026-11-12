@@ -3,18 +3,11 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { FileUp, FileText, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Download, Expand, RotateCcw, Maximize2, MoreHorizontal } from 'lucide-react';
 import { fetchPrivatePdf } from '../services/http.js';
 import { friendlyError } from '../lib/errors.js';
+import PDFSkeleton from './PDFSkeleton.jsx';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
-
-function DocumentOpening({ name }) {
-  return <div className="document-opening" role="status">
-    <span className="document-opening-icon"><FileText size={23} strokeWidth={1.5}/></span>
-    <strong>Opening your document</strong><span className="document-opening-name">{name}</span>
-    <div className="document-skeleton" aria-hidden="true"><i/><i/><i/><i/><i/><i/></div>
-  </div>;
-}
 
 export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode, expired, uploadReason, onError }) {
   const [loaded, setLoaded] = useState({ id: null, pages: 0 });
@@ -31,6 +24,8 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
   const pages = loaded.id === doc?.id ? loaded.pages : 0;
   const pdfUrl = resource.id === doc?.id ? resource.url : null;
   const fileError = resource.id === doc?.id ? resource.error : '';
+  const renderWidth = Math.floor(Math.min(width, 780) * scale);
+  const loadingPreview = <PDFSkeleton name={doc?.name} width={renderWidth}/>;
 
   useEffect(() => {
     if (!doc || expired) return;
@@ -98,11 +93,11 @@ export default function PDFViewer({ doc, onUpload, goToPage, apiMode, guestMode,
       </div>
     </div>
     <div className="pdf-scroll" ref={scroll}>
-      {fileError ? errorView : !pdfUrl ? <DocumentOpening name={doc.name}/> :
-        <Document file={pdfUrl} onLoadSuccess={({ numPages }) => setLoaded({ id: doc.id, pages: numPages })} loading={<DocumentOpening name={doc.name}/>} error={errorView}>
-          <div className={`page-paper ${renderedPage === doc.id + ':' + page ? 'is-rendered' : ''}`}><Page onRenderSuccess={() => setRenderedPage(doc.id + ':' + page)} pageNumber={page} width={Math.floor(Math.min(width, 780) * scale)} devicePixelRatio={Math.min(window.devicePixelRatio || 1, 2)} renderTextLayer renderAnnotationLayer loading={<DocumentOpening name={doc.name}/>}/></div>
+      {fileError ? errorView : !pdfUrl ? loadingPreview :
+        <Document file={pdfUrl} onLoadSuccess={({ numPages }) => setLoaded({ id: doc.id, pages: numPages })} loading={loadingPreview} error={errorView}>
+          <div className={`page-paper ${renderedPage === doc.id + ':' + page ? 'is-rendered' : ''}`}><Page onRenderSuccess={() => setRenderedPage(doc.id + ':' + page)} pageNumber={page} width={renderWidth} devicePixelRatio={Math.min(window.devicePixelRatio || 1, 2)} renderTextLayer renderAnnotationLayer loading={loadingPreview} error={errorView}/></div>
         </Document>}
     </div>
-    <div className="viewer-status"><span>{doc.sample ? 'Sample document' : doc.guest ? 'Local preview - Sign in when you ask a question' : doc.remote ? 'Saved to your account' : 'Saved in your browser'}</span><span>Page {page} of {pages || '...'}</span></div>
+    <div className="viewer-status"><span>{doc.pendingUpload ? 'Preview available · Uploading to your account…' : doc.sample ? 'Sample document' : doc.guest ? 'Local preview - Sign in when you ask a question' : doc.remote ? 'Saved to your account' : 'Saved in your browser'}</span><span>Page {page} of {pages || '...'}</span></div>
   </section>;
 }

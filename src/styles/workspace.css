@@ -282,6 +282,15 @@ body{min-width:320px;overflow:hidden}
 .doc-select{transition:transform .16s}.doc-select:active:not(:disabled){transform:scale(.975)}
 .doc-item.active .doc-icon{animation:document-selected .3s ease-out}
 .doc-select:focus-visible{outline:2px solid #bfceac;outline-offset:-3px;border-radius:10px}
+.pdf-preview-skeleton{width:min(100%,680px);max-width:100%;margin:0 auto;flex-shrink:0;color:#7a8871}
+.pdf-skeleton-paper{aspect-ratio:1 / 1.414;min-height:320px;padding:clamp(24px,6%,54px);border:1px solid #e0e1d8;background:#fff;box-shadow:0 3px 8px #29301b0c,0 16px 28px #29301b06;display:flex;flex-direction:column;gap:36px}
+.pdf-skeleton-heading,.pdf-skeleton-paragraph{display:flex;flex-direction:column;gap:12px}
+.pdf-skeleton-paper i,.pdf-skeleton-toolbar i{display:block;height:9px;border-radius:4px;background:linear-gradient(100deg,#e9eee3 25%,#f6f8f2 45%,#e9eee3 65%);background-size:220% 100%;animation:answer-shimmer 1.6s ease-in-out infinite}
+.pdf-skeleton-heading i:first-child{height:20px;width:56%;margin-bottom:5px}.pdf-skeleton-heading i:last-child{width:72%}
+.pdf-skeleton-paragraph i:first-child{width:38%;height:12px;margin-bottom:7px}.pdf-skeleton-paragraph i:nth-child(3){width:91%}.pdf-skeleton-paragraph i:last-child{width:68%}
+.pdf-skeleton-caption{display:block;padding:13px 8px;text-align:center;font-size:11px}
+.pdf-skeleton-toolbar i:first-child{width:30%;height:14px}.pdf-skeleton-toolbar i:last-child{width:22%;height:25px}
+@media(prefers-reduced-motion:reduce){.pdf-skeleton-paper i,.pdf-skeleton-toolbar i{animation:none}}
 .document-opening{display:flex;align-items:center;flex-direction:column;justify-content:center;padding:32px 24px;min-height:330px;max-width:100%;color:#718368;animation:conversation-arrive .25s ease-out}
 .document-opening-icon{display:grid;place-items:center;width:48px;height:52px;background:#f4f7ed;border:1px solid #dce5d3;border-radius:13px;margin-bottom:15px;box-shadow:0 6px 18px #31482408}
 .document-opening>strong{font-size:13px;font-weight:500;color:#5a7050}
