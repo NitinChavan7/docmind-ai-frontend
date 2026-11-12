@@ -48,7 +48,7 @@ VITE_GOOGLE_CLIENT_ID=
 
 Google sign-in normally reads the backend's public client ID from `/api/auth/config`. `VITE_GOOGLE_CLIENT_ID` is a fallback for older backends. If set, it must match the backend client ID. Authorize the frontend origin in the Google Web OAuth client. Without configuration, email sign-in remains available and the Google button is disabled. Never put a client secret or service API key in a `VITE_` variable.
 
-For a standalone preview, set `VITE_USE_API=false`. Offline PDFs use IndexedDB and demo conversations use localStorage. API-mode guest previews stay in memory; signed-in documents and saved conversations come from the server.
+For a standalone preview, set `VITE_USE_API=false`. Offline PDFs use IndexedDB and demo conversations use localStorage. Guest PDF previews also use IndexedDB so they survive refresh on the same browser. Removing a guest preview deletes its local copy; transferring it to a signed-in account removes the local preview after successful preparation. Signed-in documents and saved conversations come from the server. The selected document ID is remembered per account in sessionStorage; authentication still uses cookies.
 
 ## How document chat works
 

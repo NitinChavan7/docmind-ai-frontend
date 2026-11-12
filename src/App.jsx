@@ -2,6 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Menu, ArrowUpRight, ArrowRight, Info, X, FolderOpen, LogIn, BookOpen, MessageSquare, FileText, LoaderCircle } from 'lucide-react';
 import Sidebar from './components/Sidebar.jsx';
 import GuestWelcome from './components/GuestWelcome.jsx';
+import WorkspaceRestore from './components/WorkspaceRestore.jsx';
+import { chooseRememberedDocument, rememberDocument } from './lib/workspaceState.js';
 import DeleteDocumentDialog from './components/DeleteDocumentDialog.jsx';
 import PDFSkeleton from './components/PDFSkeleton.jsx';
 import AccountControls from './components/AccountControls.jsx';
@@ -36,6 +38,8 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
   useEffect(() => { setUsageOpen(false); setPolicyOpen(false); setQuotaFailure(null); expiredSeen.current.clear(); }, [userId]);
   useEffect(() => { setQuotaFailure(previous => ['CHAT_QUESTION_LIMIT_REACHED', 'CHAT_EXPIRED', 'DOCUMENT_EXPIRED'].includes(previous?.code) ? previous : null); }, [usageState.updatedAt]);
   const [docs, setDocs] = useState([]), [activeId, setActiveId] = useState(null);
+  const [restoringGuests, setRestoringGuests] = useState(USE_REAL_API);
+  const [documentsReadyScope, setDocumentsReadyScope] = useState(null);
   const [uploadPreview, setUploadPreview] = useState(null);
   const [chats, setChats] = useState(() => USE_REAL_API ? {} : readChats());
   const [collapsed, setCollapsed] = useState(false), [chatOpen, setChatOpen] = useState(() => !window.matchMedia('(max-width: 1279px)').matches), [mobileOpen, setMobileOpen] = useState(false);
@@ -58,6 +62,25 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
   const visibleDocs = useMemo(() => docs.filter(doc => !USE_REAL_API || doc.guest || (authenticated && doc.ownerId === userId)), [docs, authenticated, userId]);
   const activeDoc = useMemo(() => (uploadPreview?.ownerId === userId ? uploadPreview : null) || visibleDocs.find(doc => doc.id === activeId) || null, [visibleDocs, activeId, uploadPreview, userId]);
   const guestStart = guestMode && !activeDoc;
+  useEffect(() => {
+    if (activeDoc && !activeDoc.pendingUpload) rememberDocument(activeDoc.guest ? 'guest' : userId || 'offline', activeDoc.id);
+  }, [activeDoc?.id, activeDoc?.guest, activeDoc?.pendingUpload, userId]);
+  useEffect(() => {
+    if (!USE_REAL_API) return;
+    let cancelled = false;
+    listStoredDocuments().then(stored => {
+      if (cancelled) return;
+      const guests = stored.filter(doc => doc.guest && doc.file instanceof Blob && !removedIds.current.has(doc.id));
+      setDocs(previous => [...previous, ...guests.filter(doc => !previous.some(item => item.id === doc.id))]);
+    }).catch(() => {}).finally(() => { if (!cancelled) setRestoringGuests(false); });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!guestMode || checkingSession || restoringGuests || activeId) return;
+    const guests = visibleDocs.filter(doc => doc.guest);
+    if (guests.length) setActiveId(chooseRememberedDocument(guests, 'guest'));
+  }, [guestMode, checkingSession, restoringGuests, activeId, visibleDocs]);
+
   const serverDocId = authenticated && activeDoc && !activeDoc.guest && !activeDoc.pendingUpload ? activeDoc.id : null;
   const reportQuota = error => {
     if (!QUOTA_CODES.has(error?.code)) return;
@@ -85,9 +108,11 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
         const newDuringRequest = previous.filter(doc => doc.ownerId === userId && !presentAtStart.has(doc.id) && !items.some(item => item.id === doc.id) && !removedIds.current.has(doc.id));
         return [...previous.filter(doc => doc.guest), ...newDuringRequest, ...items.map(doc => ({ ...doc, file: byId.get(doc.id)?.file, readerKey: byId.get(doc.id)?.readerKey }))];
       });
-      setActiveId(previous => previous && (previous.startsWith('guest:') || !presentAtStart.has(previous) || items.some(doc => doc.id === previous)) ? previous : items[0]?.id || null);
+      setActiveId(previous => previous && (previous.startsWith('guest:') || !presentAtStart.has(previous) || items.some(doc => doc.id === previous)) ? previous : chooseRememberedDocument(items, userId));
     } catch (error) { if (error.name !== 'AbortError') setLoadError(friendlyError(error, 'documents')); }
-    finally { if (!signal?.aborted) setLoadingDocs(false); }
+    finally {
+      if (!signal?.aborted) { setLoadingDocs(false); setDocumentsReadyScope(userId); }
+    }
   }, [userId]);
 
   useEffect(() => {
@@ -99,7 +124,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
     }
     setDocs(previous => previous.filter(doc => doc.guest));
     setActiveId(previous => previous?.startsWith('guest:') ? previous : null);
-    setLoadingDocs(false); setLoadError('');
+    setLoadingDocs(false); setLoadError(''); setDocumentsReadyScope(null);
   }, [authenticated, loadDocuments]);
 
   useEffect(() => {
@@ -116,7 +141,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
           stored.push({ id: 'docmind-sample', name: file.name, size: file.size, createdAt: 0, file, sample: true });
         }
       } catch {}
-      if (!cancelled) { setDocs(stored); setActiveId(stored[0]?.id || null); }
+      if (!cancelled) { setDocs(stored); setActiveId(chooseRememberedDocument(stored, 'offline')); }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -160,7 +185,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
         if (!authenticated && file.size > (USE_REAL_API ? 10 : 20) * 1024 * 1024) { setToast('This PDF exceeds the size limit. Choose a file under ' + (USE_REAL_API ? 10 : 20) + ' MB.'); continue; }
         try {
           if (await file.slice(0, 5).text() !== '%PDF-') { setToast('That file does not look like a PDF. Please choose another PDF.'); continue; }
-          let doc;
+          let doc, guestSaved = true;
           if (authenticated) {
             const readerKey = 'upload:' + uid();
             setUploadPreview({ id: readerKey, readerKey, name: file.name, file, ownerId: userId, pendingUpload: true, status: 'uploading' });
@@ -173,12 +198,16 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
           else {
             doc = { id: (guestMode ? 'guest:' : '') + uid(), name: file.name, size: file.size, createdAt: Date.now(), file, guest: guestMode, status: 'local' };
             if (!USE_REAL_API) await saveDocument(doc);
+            else if (guestMode) {
+              try { await saveDocument(doc); }
+              catch { guestSaved = false; }
+            }
           }
           setDocs(previous => [doc, ...previous.filter(item => item.id !== doc.id)]);
           setActiveId(doc.id); setJumpPage({ page: 0 }); setMobileOpen(false); setTransferError('');
           setUploadPreview(null);
           if (guestMode) { setChatOpen(!window.matchMedia('(max-width: 1279px)').matches); setChatFocus(false); }
-          setToast(guestMode ? 'PDF opened. Sign in to ask questions.' : 'Added ' + file.name + ' to your library');
+          setToast(guestMode ? guestSaved ? 'PDF opened. Sign in to ask questions.' : 'PDF opened, but this browser could not save the preview. Keep this tab open to continue.' : 'Added ' + file.name + ' to your library');
           if (authenticated) { usageState.refresh(); await indexDocument(doc); }
         } catch (error) { setUploadPreview(null); reportQuota(error); setToast(friendlyError(error, 'upload', usageData)); if (authenticated) usageState.refresh(); }
       }
@@ -199,7 +228,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
     setActiveId(previous => previous === doc.id ? fallbackId : previous);
     try {
       if (doc.remote) await deleteDocument(doc.id);
-      else if (!doc.guest) await deleteStoredDocument(doc.id);
+      else await deleteStoredDocument(doc.id);
       if (deletionOwner.current !== owner || deletionRun.current !== run) return;
       setChats(previous => { const next = { ...previous }; delete next[doc.id]; return next; });
       setQueuedQuestion(previous => previous?.docId === doc.id ? null : previous);
@@ -285,6 +314,7 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
           const ready = { ...remote, status: result?.status || 'ready', pageCount: result?.pageCount || 0, file: doc.file };
           setDocs(previous => [ready, ...previous.filter(item => item.id !== doc.id && item.id !== ready.id)]);
           setActiveId(ready.id); setJumpPage({ page: 0 });
+          void deleteStoredDocument(doc.id).catch(() => {});
           setQueuedQuestion(previous => previous?.id === request.id ? { ...previous, docId: ready.id, phase: 'ready' } : previous);
         } catch (error) {
           if (!controller.signal.aborted) {
@@ -346,6 +376,11 @@ export default function App({ user, onLogout, signingOut, onRequestSignIn, check
     if (docsExpired) { loadDocuments(); usageState.refresh(); }
     if (chatsExpired) { serverChat.refreshConversations(); usageState.refresh(); }
   }, [authenticated, visibleDocs, serverChat.conversations, usageState.now, loadDocuments, usageState.refresh]);
+
+  const restoringWorkspace = (checkingSession && !user) || restoringGuests
+    || (authenticated && documentsReadyScope !== userId)
+    || (guestMode && !activeId && visibleDocs.some(doc => doc.guest));
+  if (restoringWorkspace) return <WorkspaceRestore/>;
 
   return <div className={`app-shell ${activeDoc ? 'has-document' : ''} ${guestStart ? 'guest-start' : ''} ${chatOpen ? 'is-asking' : 'is-reading'}`} onDragEnter={event => { event.preventDefault(); if (event.dataTransfer.types.includes('Files')) { dragDepth.current++; setDragging(true); } }} onDragOver={event => event.preventDefault()} onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }} onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDragging(false); upload([...event.dataTransfer.files]); }}>
     <input ref={inputRef} type="file" accept="application/pdf,.pdf" multiple hidden onChange={event => { upload([...event.target.files]); event.target.value = ''; }}/>

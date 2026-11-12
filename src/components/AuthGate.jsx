@@ -4,6 +4,7 @@ import * as auth from '../services/authApi.js';
 import { resetCredentials } from '../services/http.js';
 import GoogleMark from './GoogleMark.jsx';
 import Modal from './Modal.jsx';
+import WorkspaceRestore from './WorkspaceRestore.jsx';
 import { normalizeGoogleClientId } from '../lib/google.js';
 import { friendlyError, validateAuthFields } from '../lib/errors.js';
 
@@ -20,6 +21,7 @@ export default function AuthGate({ children }) {
   const [googleClientId, setGoogleClientId] = useState(configuredGoogleClientId);
   const [googleConfigLoading, setGoogleConfigLoading] = useState(true);
   const [user, setUser] = useState(null), [checking, setChecking] = useState(true);
+  const [sessionError, setSessionError] = useState('');
   const [open, setOpen] = useState(false), [prompt, setPrompt] = useState({});
   const [mode, setMode] = useState('login'), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(''), [email, setEmail] = useState('');
@@ -35,13 +37,16 @@ export default function AuthGate({ children }) {
     restoreController.current?.abort();
     const controller = new AbortController(); restoreController.current = controller;
     const current = ++generation.current;
-    setChecking(true);
+    setChecking(true); setSessionError('');
     try {
       const profile = await auth.getCurrentUser({ signal: controller.signal });
       if (current === generation.current) { setUser(profile); setOpen(false); }
     } catch (error) {
-      if (!controller.signal.aborted && current === generation.current) setUser(null);
-      // A new visitor without a session is a guest, not an authentication error.
+      if (!controller.signal.aborted && current === generation.current) {
+        if (error.status === 401) setUser(null);
+        else setSessionError('Your session could not be checked. Check your connection and try again.');
+      }
+      // Only a confirmed missing session should open the guest welcome page.
     } finally { if (!controller.signal.aborted && current === generation.current) setChecking(false); }
   }, []);
 
@@ -140,7 +145,7 @@ export default function AuthGate({ children }) {
   const blocked = busy || checking;
 
   return <>
-    {children(user, signOut, busy, requestSignIn, checking)}
+    {sessionError && !user && !checking ? <WorkspaceRestore error={sessionError} onRetry={restore}/> : children(user, signOut, busy, requestSignIn, checking)}
     {open && !user && <Modal className="auth-dialog" role="dialog" labelledBy={titleId} describedBy={descriptionId} onClose={close} busy={busy}>
       <div className="auth-experience">
         <aside className="auth-story">

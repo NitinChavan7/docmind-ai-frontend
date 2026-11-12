@@ -4,6 +4,7 @@ import { request, resetCredentials, fetchPrivatePdf, API_BASE } from '../src/ser
 import { login, register, googleLogin, getAuthConfig, getCurrentUser, logout } from '../src/services/authApi.js';
 import { createChat, getCandidateChats, getChatMessages, sendChatMessage } from '../src/services/chatApi.js';
 import { friendlyError, validateAuthFields } from '../src/lib/errors.js';
+import { chooseRememberedDocument, rememberDocument, readSelectedDocument } from '../src/lib/workspaceState.js';
 
 test('account validation explains missing and invalid fields without blocking existing short passwords', () => {
   assert.deepEqual(Object.keys(validateAuthFields({}, true)), ['name', 'email', 'password']);
@@ -151,4 +152,32 @@ test('conversation ownership and malformed server payloads fail explicitly',asyn
   withCsrf(t,async()=>json({data:[{_id:'chat-id',documentId:'other-document'}]}));
   await assert.rejects(getCandidateChats('doc-id'),/another document/);
   await assert.rejects(sendChatMessage('chat-id','Question?'),/incomplete answer/);
+});
+
+
+test('workspace selection survives reload, stays account-specific and ignores removed document IDs', t => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  const entries = new Map();
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: {
+    getItem: key => entries.get(key) ?? null,
+    setItem: (key, value) => entries.set(key, value),
+  } });
+  t.after(() => { if (original) Object.defineProperty(globalThis, 'sessionStorage', original); else delete globalThis.sessionStorage; });
+  const docs = [{ id: 'newest' }, { id: 'selected' }];
+  rememberDocument('account-a', 'selected');
+  rememberDocument('guest', 'local-preview');
+  assert.equal(chooseRememberedDocument(docs, 'account-a'), 'selected');
+  assert.equal(chooseRememberedDocument(docs, 'account-b'), 'newest');
+  assert.equal(readSelectedDocument('guest'), 'local-preview');
+  assert.equal(chooseRememberedDocument([{ id: 'newest' }], 'account-a'), 'newest');
+  assert.equal(chooseRememberedDocument([], 'account-a'), null);
+});
+
+test('blocked browser storage does not prevent opening a workspace', t => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, get() { throw new Error('Storage is blocked'); } });
+  t.after(() => { if (original) Object.defineProperty(globalThis, 'sessionStorage', original); else delete globalThis.sessionStorage; });
+  assert.doesNotThrow(() => rememberDocument('account-a', 'selected'));
+  assert.equal(readSelectedDocument('account-a'), null);
+  assert.equal(chooseRememberedDocument([{ id: 'first' }], 'account-a'), 'first');
 });
